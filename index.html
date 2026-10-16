@@ -142,6 +142,38 @@ input[type=text]{
     border-radius:6px;
 }
 
+.filters{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:6px;
+    margin-top:10px;
+    font-size:12px;
+}
+
+.filters select{
+    width:100%;
+    background:#222;
+    color:#fff;
+    border:1px solid #444;
+    padding:4px;
+}
+
+.btnrow{
+    display:flex;
+    gap:6px;
+}
+
+.tag{
+    display:inline-block;
+    background:#333;
+    border-radius:4px;
+    padding:1px 6px;
+    margin:2px 2px 0 0;
+}
+
+.tag.Live{ background:#cc0000; }
+.tag.Gepland{ background:#8a6d00; }
+
 .counter{
     color:#87ceeb;
     margin-top:10px;
@@ -175,8 +207,26 @@ placeholder="CTRL+U op GTWorld Streams pagina, alles kopiëren en hier plakken">
             <input
                 id="filter"
                 type="text"
-                placeholder="Filter video-id..."
+                placeholder="Zoek op titel of video-id..."
                 oninput="renderList()">
+
+            <div class="filters">
+                <label>Status
+                    <select id="f_status" onchange="renderList()"></select></label>
+                <label>Taal
+                    <select id="f_lang" onchange="renderList()"></select></label>
+                <label>Serie
+                    <select id="f_series" onchange="renderList()"></select></label>
+                <label>Sessie
+                    <select id="f_session" onchange="renderList()"></select></label>
+                <label>Circuit
+                    <select id="f_circuit" onchange="renderList()"></select></label>
+            </div>
+
+            <div class="btnrow">
+                <button onclick="selectVisible(true)">Alles selecteren</button>
+                <button onclick="selectVisible(false)">Niets selecteren</button>
+            </div>
 
             <div id="counter" class="counter"></div>
 
@@ -189,13 +239,58 @@ placeholder="CTRL+U op GTWorld Streams pagina, alles kopiëren en hier plakken">
 </div>
 
 <script>
-
 let streams = [];
 let selected = new Set();
 
+function fixText(s)
+{
+    try { s = JSON.parse('"' + s + '"'); } catch(e) {}
+    if(/[ÃÂ]/.test(s))
+    {
+        try { s = decodeURIComponent(escape(s)); } catch(e) {}
+    }
+    return s;
+}
+
+function esc(s)
+{
+    return String(s).replace(/[&<>"']/g, c => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[c]));
+}
+
+function analyse(title, badge, meta)
+{
+    const all = (badge + " " + meta).toLowerCase();
+
+    let status = "Afgelopen";
+    if(/gepland|aan het wachten|scheduled|waiting|premi/.test(all))
+        status = "Gepland";
+    else if(/\blive\b|kijkers|watching/.test(all))
+        status = "Live";
+
+    const langMatch = title.match(/\(([^()]+)\)\s*$/);
+    const lang = langMatch ? langMatch[1].trim() : "Onbekend";
+
+    const parts = title.split(/\s[I|]\s/).map(x => x.trim());
+    const clean = x => (x || "")
+        .replace(/\([^()]*\)\s*$/, "")
+        .trim();
+
+    const ok = parts.length >= 4;
+
+    return {
+        status,
+        lang,
+        session: ok ? clean(parts[1]) : "Onbekend",
+        circuit: ok ? clean(parts[2]) : "Onbekend",
+        series:  ok ? clean(parts.slice(3).join(" | ")) : "Onbekend"
+    };
+}
+
 function loadStreams()
 {
-    const html =
+    let html =
         document.getElementById("source").value;
 
     if(!html.trim())
@@ -204,77 +299,160 @@ function loadStreams()
         return;
     }
 
-    const ids =
+    html = html
+        .replace(/\\x22/g, '"')
+        .replace(/\\"/g, '"');
+
+    const chunks =
+        html.split('"lockupViewModel":{"contentImage"')
+            .slice(1);
+
+    const map = new Map();
+
+    chunks.forEach(chunk =>
+    {
+        const idm =
+            chunk.match(/"videoId":"([^"]+)"/);
+
+        if(!idm || map.has(idm[1]))
+            return;
+
+        const tm =
+            chunk.match(
+              /"lockupMetadataViewModel":\{"title":\{"content":"((?:[^"\\]|\\.)*)"/);
+
+        const bm =
+            chunk.match(
+              /"thumbnailBadgeViewModel":\{"text":"((?:[^"\\]|\\.)*)"/);
+
+        const metaPart =
+            chunk.match(/"metadataParts":\[(.*?)\]\}\]/);
+
+        const meta = metaPart
+            ? [...metaPart[1].matchAll(
+                /"content":"((?:[^"\\]|\\.)*)"/g)]
+                .map(x => fixText(x[1])).join(" • ")
+            : "";
+
+        const title = tm ? fixText(tm[1]) : idm[1];
+        const badge = bm ? fixText(bm[1]) : "";
+
+        map.set(idm[1], {
+            id: idm[1],
+            title,
+            badge,
+            meta,
+            thumb:
+              `https://i.ytimg.com/vi/${idm[1]}/mqdefault.jpg`,
+            ...analyse(title, badge, meta)
+        });
+    });
+
+    if(map.size === 0)
+    {
         [...new Set(
             [...html.matchAll(/"videoId":"([^"]+)"/g)]
             .map(x => x[1])
-        )];
+        )].forEach(id =>
+            map.set(id, {
+                id,
+                title: id,
+                badge: "",
+                meta: "",
+                thumb:
+                 `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
+                status: "Afgelopen",
+                lang: "Onbekend",
+                session: "Onbekend",
+                circuit: "Onbekend",
+                series: "Onbekend"
+            }));
+    }
 
-    streams =
-        ids.map(id => ({
-            id,
-            thumb:
-             `https://i.ytimg.com/vi/${id}/mqdefault.jpg`
-        }));
+    streams = [...map.values()];
 
-    selected =
-        new Set(
-            streams.map(
-                x => x.id
-            )
-        );
+    // Geen autoplay bij laden: niets geselecteerd
+    selected = new Set();
 
-    document.getElementById(
-        "counter"
-    ).innerText =
+    fillFilters();
+
+    document.getElementById("counter").innerText =
         streams.length +
-        " unieke video's gevonden";
+        " unieke video's gevonden (vink aan om af te spelen)";
 
     renderList();
     renderGrid();
 }
 
+
+const FILTERS = ["status","lang","series","session","circuit"];
+
+function fillFilters()
+{
+    FILTERS.forEach(key =>
+    {
+        const sel = document.getElementById("f_" + key);
+        const values =
+            [...new Set(streams.map(s => s[key]))].sort();
+
+        sel.innerHTML =
+            '<option value="">Alle</option>' +
+            values.map(v =>
+                `<option value="${esc(v)}">${esc(v)}</option>`
+            ).join("");
+    });
+}
+
+function getFiltered()
+{
+    const text =
+        document.getElementById("filter")
+            .value.toLowerCase();
+
+    const active = {};
+    FILTERS.forEach(k =>
+        active[k] =
+            document.getElementById("f_" + k).value);
+
+    return streams.filter(s =>
+        (s.title + " " + s.id)
+            .toLowerCase().includes(text) &&
+        FILTERS.every(k =>
+            !active[k] || s[k] === active[k])
+    );
+}
+
 function renderList()
 {
-    const filter =
-        document.getElementById(
-            "filter"
-        ).value.toLowerCase();
-
     const list =
-        document.getElementById(
-            "streamList"
-        );
-
-    const filtered =
-        streams.filter(s =>
-            s.id
-             .toLowerCase()
-             .includes(filter)
-        );
+        document.getElementById("streamList");
 
     list.innerHTML =
-        filtered.map((stream,index)=>`
+        getFiltered().map(stream=>`
 
         <div class="item">
 
             <input
                 type="checkbox"
-                ${selected.has(stream.id)
-                    ? "checked"
-                    : ""}
-
+                ${selected.has(stream.id) ? "checked" : ""}
                 onchange="toggle('${stream.id}')">
 
             <img src="${stream.thumb}">
 
             <div class="info">
 
-                <strong>
-                    ${stream.id}
-                </strong>
+                <strong>${esc(stream.title)}</strong>
 
-                <br><br>
+                <br>
+
+                <span class="tag ${esc(stream.status)}">${esc(stream.status)}</span>
+                <span class="tag">${esc(stream.lang)}</span>
+
+                <br>
+
+                ${esc(stream.meta)}
+
+                <br>
 
                 <a href="https://www.youtube.com/watch?v=${stream.id}"
                    target="_blank"
@@ -287,6 +465,16 @@ function renderList()
         </div>
 
         `).join("");
+}
+
+function selectVisible(on)
+{
+    getFiltered().forEach(s =>
+        on ? selected.add(s.id)
+           : selected.delete(s.id));
+
+    renderList();
+    renderGrid();
 }
 
 function toggle(id)
@@ -302,24 +490,23 @@ function toggle(id)
 function renderGrid()
 {
     const viewer =
-        document.getElementById(
-            "viewer"
-        );
+        document.getElementById("viewer");
 
     const active =
-        streams.filter(
-            x =>
-            selected.has(
-                x.id
-            )
-        );
+        streams.filter(x => selected.has(x.id));
 
     if(active.length === 0)
     {
-        viewer.className="empty";
-        viewer.innerHTML =
-            "Geen streams geselecteerd";
+        viewer.className = "empty";
+        viewer.style.gridTemplateColumns = "";
+        viewer.innerHTML = "Geen streams geselecteerd";
         return;
+    }
+
+    if(viewer.className !== "grid")
+    {
+        viewer.className = "grid";
+        viewer.innerHTML = "";
     }
 
     let cols = 1;
@@ -335,29 +522,40 @@ function renderGrid()
     else
         cols = 5;
 
-    viewer.className = "grid";
-
     viewer.style.gridTemplateColumns =
         `repeat(${cols},1fr)`;
 
-    viewer.innerHTML =
-        active.map(stream=>`
+    // Bestaande tegels blijven staan (geen herlaad)
+    [...viewer.children].forEach(tile =>
+    {
+        if(!selected.has(tile.dataset.id))
+            tile.remove();
+    });
 
-        <div class="tile">
+    const present =
+        new Set([...viewer.children].map(t => t.dataset.id));
 
+    active.forEach(stream =>
+    {
+        if(present.has(stream.id))
+            return;
+
+        const tile = document.createElement("div");
+        tile.className = "tile";
+        tile.dataset.id = stream.id;
+        tile.innerHTML = `
             <iframe
-                loading="lazy"
+                allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
                 allowfullscreen
                 referrerpolicy="strict-origin-when-cross-origin"
-                src="https://www.youtube.com/embed/${stream.id}?mute=1">
-            </iframe>
-
-        </div>
-
-        `).join("");
+                src="https://www.youtube.com/embed/${stream.id}?autoplay=1&mute=1">
+            </iframe>`;
+        viewer.appendChild(tile);
+    });
 }
 
 </script>
 
 </body>
 </html>
+
