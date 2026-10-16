@@ -1,0 +1,711 @@
+
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GTWorld Multiview</title>
+
+<style>
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+}
+
+body{
+    background:#111;
+    color:#fff;
+    font-family:Segoe UI,Arial,sans-serif;
+    height:100vh;
+    overflow:hidden;
+}
+
+.container{
+    display:flex;
+    height:100vh;
+}
+
+.main{
+    flex:1;
+    padding:10px;
+    overflow:auto;
+}
+
+.sidebar{
+    width:400px;
+    background:#1b1b1b;
+    border-left:1px solid #333;
+    display:flex;
+    flex-direction:column;
+}
+
+.header{
+    padding:15px;
+    border-bottom:1px solid #333;
+}
+
+textarea{
+    width:100%;
+    height:120px;
+    margin-top:10px;
+    resize:vertical;
+    background:#222;
+    color:#fff;
+    border:1px solid #444;
+    padding:8px;
+}
+
+button{
+    width:100%;
+    margin-top:10px;
+    padding:10px;
+    cursor:pointer;
+}
+
+input[type=text]{
+    width:100%;
+    padding:8px;
+    margin-top:10px;
+    background:#222;
+    color:white;
+    border:1px solid #444;
+}
+
+.list{
+    overflow:auto;
+    flex:1;
+}
+
+.item{
+    display:flex;
+    gap:10px;
+    padding:10px;
+    border-bottom:1px solid #333;
+}
+
+.item img{
+    width:120px;
+    border-radius:6px;
+}
+
+.info{
+    flex:1;
+    font-size:12px;
+    word-break:break-all;
+}
+
+.grid{
+    display:grid;
+    gap:10px;
+    height:100%;
+}
+
+.tile{
+    background:#000;
+    border-radius:8px;
+    overflow:hidden;
+    min-height:220px;
+}
+
+.tile iframe{
+    width:100%;
+    height:100%;
+    border:none;
+}
+
+.empty{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    height:100%;
+    color:#888;
+    font-size:22px;
+}
+
+.youtube-link{
+    width:100%;
+    height:100%;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    flex-direction:column;
+    gap:15px;
+}
+
+.youtube-link a{
+    background:#cc0000;
+    color:white;
+    text-decoration:none;
+    padding:10px 20px;
+    border-radius:6px;
+}
+
+.filters{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:6px;
+    margin-top:10px;
+    font-size:12px;
+}
+
+.filters select{
+    width:100%;
+    background:#222;
+    color:#fff;
+    border:1px solid #444;
+    padding:4px;
+}
+
+.btnrow{
+    display:flex;
+    gap:6px;
+}
+
+.tag{
+    display:inline-block;
+    background:#333;
+    border-radius:4px;
+    padding:1px 6px;
+    margin:2px 2px 0 0;
+}
+
+.tile{
+    position:relative;
+}
+
+.tile .audio{
+    position:absolute;
+    left:8px;
+    bottom:8px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    background:rgba(0,0,0,.65);
+    border-radius:20px;
+    padding:3px 8px;
+    z-index:5;
+}
+
+.tile .mutebtn{
+    width:auto;
+    margin:0;
+    padding:2px 6px;
+    background:transparent;
+    border:none;
+    color:#fff;
+    font-size:18px;
+    cursor:pointer;
+}
+
+.tile .vol{
+    width:80px;
+    margin:0;
+    padding:0;
+    cursor:pointer;
+}
+
+.tag.Live{ background:#cc0000; }
+.tag.Gepland{ background:#8a6d00; }
+
+.counter{
+    color:#87ceeb;
+    margin-top:10px;
+}
+
+</style>
+</head>
+<body>
+
+<div class="container">
+
+    <div class="main">
+        <div id="viewer" class="empty">
+            Plak de broncode van GTWorld Streams
+        </div>
+    </div>
+
+    <div class="sidebar">
+
+        <div class="header">
+
+            <h2>GTWorld Streams</h2>
+
+            <textarea id="source"
+placeholder="CTRL+U op GTWorld Streams pagina, alles kopiëren en hier plakken"></textarea>
+
+            <button onclick="loadStreams()">
+                Streams laden
+            </button>
+
+            <button onclick="openSource()">
+                Bron openen in popup
+            </button>
+
+            <div id="sourceHint" class="counter"></div>
+
+            <input
+                id="filter"
+                type="text"
+                placeholder="Zoek op titel of video-id..."
+                oninput="renderList()">
+
+            <div class="filters">
+                <label>Status
+                    <select id="f_status" onchange="renderList()"></select></label>
+                <label>Taal
+                    <select id="f_lang" onchange="renderList()"></select></label>
+                <label>Serie
+                    <select id="f_series" onchange="renderList()"></select></label>
+                <label>Sessie
+                    <select id="f_session" onchange="renderList()"></select></label>
+                <label>Circuit
+                    <select id="f_circuit" onchange="renderList()"></select></label>
+            </div>
+
+            <div class="btnrow">
+                <button onclick="selectVisible(true)">Alles selecteren</button>
+                <button onclick="selectVisible(false)">Niets selecteren</button>
+            </div>
+
+            <div id="counter" class="counter"></div>
+
+        </div>
+
+        <div id="streamList" class="list"></div>
+
+    </div>
+
+</div>
+
+<script>
+let streams = [];
+let selected = new Set();
+
+function fixText(s)
+{
+    try { s = JSON.parse('"' + s + '"'); } catch(e) {}
+    if(/[ÃÂ]/.test(s))
+    {
+        try { s = decodeURIComponent(escape(s)); } catch(e) {}
+    }
+    return s;
+}
+
+const SOURCE_URL =
+    "https://www.youtube.com/@GTWorld/streams";
+
+function openSource()
+{
+    const hint = document.getElementById("sourceHint");
+    const features =
+        "popup=yes,width=1000,height=800,left=100,top=60";
+
+    // Browsers blokkeren view-source: vanuit een webpagina.
+    // Daarom eerst proberen, anders de gewone pagina openen.
+    let win = null;
+    try { win = window.open("view-source:" + SOURCE_URL, "gtsource", features); }
+    catch(e) {}
+
+    const blocked = !win || win.closed;
+
+    if(blocked)
+    {
+        win = window.open(SOURCE_URL, "gtsource", features);
+    }
+
+    if(!win)
+    {
+        hint.innerText =
+            "Popup geblokkeerd: sta popups toe voor deze pagina.";
+        return;
+    }
+
+    hint.innerText =
+        "Druk in de popup op CTRL+U, daarna CTRL+A en CTRL+C. " +
+        "Plak hier met CTRL+V en klik op Streams laden.";
+
+    // Plakvak klaarzetten zodat alleen nog CTRL+V nodig is
+    const src = document.getElementById("source");
+    src.value = "";
+    src.focus();
+}
+
+function esc(s)
+{
+    return String(s).replace(/[&<>"']/g, c => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[c]));
+}
+
+function analyse(title, badge, meta, isLive)
+{
+    const all = (badge + " " + meta).toLowerCase();
+
+    // Live: badgeStyle ..._LIVE (betrouwbaarst), anders "kijker(s)"
+    // Gepland: badge "Gepland" / "aan het wachten"
+    // Afgelopen: "Gestreamd: ..." met duur in de badge
+    let status = "Afgelopen";
+    if(isLive)
+        status = "Live";
+    else if(/gepland|aan het wachten|scheduled|waiting|premi/.test(all))
+        status = "Gepland";
+    else if(/gestreamd|streamed/.test(all))
+        status = "Afgelopen";
+    else if(/kijker|viewer|watching/.test(all))
+        status = "Live";
+
+    const langMatch = title.match(/\(([^()]+)\)\s*$/);
+    const lang = langMatch ? langMatch[1].trim() : "Onbekend";
+
+    const parts = title.split(/\s[I|]\s/).map(x => x.trim());
+    const clean = x => (x || "")
+        .replace(/\([^()]*\)\s*$/, "")
+        .trim();
+
+    const ok = parts.length >= 4;
+
+    return {
+        status,
+        lang,
+        session: ok ? clean(parts[1]) : "Onbekend",
+        circuit: ok ? clean(parts[2]) : "Onbekend",
+        series:  ok ? clean(parts.slice(3).join(" | ")) : "Onbekend"
+    };
+}
+
+function loadStreams()
+{
+    let html =
+        document.getElementById("source").value;
+
+    if(!html.trim())
+    {
+        alert("Geen broncode geplakt");
+        return;
+    }
+
+    html = html
+        .replace(/&quot;/g, '"')
+        .replace(/\\u0022/g, '"')
+        .replace(/\\x22/g, '"')
+        .replace(/\\"/g, '"');
+
+    const chunks =
+        html.split('"lockupViewModel":{"contentImage"')
+            .slice(1);
+
+    const map = new Map();
+
+    chunks.forEach(chunk =>
+    {
+        const idm =
+            chunk.match(/"videoId":"([^"]+)"/);
+
+        if(!idm || map.has(idm[1]))
+            return;
+
+        const tm =
+            chunk.match(
+              /"lockupMetadataViewModel":\{"title":\{"content":"((?:[^"\\]|\\.)*)"/);
+
+        const bm =
+            chunk.match(
+              /"thumbnailBadgeViewModel":\{"text":"((?:[^"\\]|\\.)*)"/);
+
+        const metaPart =
+            chunk.match(/"metadataParts":\[(.*?)\]\}\]/);
+
+        const meta = metaPart
+            ? [...metaPart[1].matchAll(
+                /"content":"((?:[^"\\]|\\.)*)"/g)]
+                .map(x => fixText(x[1])).join(" • ")
+            : "";
+
+        const title = tm ? fixText(tm[1]) : idm[1];
+        const isLive =
+            /BADGE_STYLE_LIVE|"imageName":"LIVE"|"text":"LIVE"/.test(chunk) ||
+            /kijker|watching|viewers/i.test(meta);
+        const badge = isLive ? "LIVE" : (bm ? fixText(bm[1]) : "");
+
+        map.set(idm[1], {
+            id: idm[1],
+            title,
+            badge,
+            meta,
+            thumb:
+              `https://i.ytimg.com/vi/${idm[1]}/mqdefault.jpg`,
+            ...analyse(title, badge, meta, isLive)
+        });
+    });
+
+    if(map.size === 0)
+    {
+        [...new Set(
+            [...html.matchAll(/"videoId":"([^"]+)"/g)]
+            .map(x => x[1])
+        )].forEach(id =>
+            map.set(id, {
+                id,
+                title: id,
+                badge: "",
+                meta: "",
+                thumb:
+                 `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
+                status: "Afgelopen",
+                lang: "Onbekend",
+                session: "Onbekend",
+                circuit: "Onbekend",
+                series: "Onbekend"
+            }));
+    }
+
+    streams = [...map.values()];
+
+    // Geen autoplay bij laden: niets geselecteerd
+    selected = new Set();
+
+    fillFilters();
+
+    document.getElementById("counter").innerText =
+        streams.length +
+        " unieke video's gevonden (vink aan om af te spelen)";
+
+    renderList();
+    renderGrid();
+}
+
+
+const FILTERS = ["status","lang","series","session","circuit"];
+
+function fillFilters()
+{
+    FILTERS.forEach(key =>
+    {
+        const sel = document.getElementById("f_" + key);
+        const values =
+            [...new Set(streams.map(s => s[key]))].sort();
+
+        sel.innerHTML =
+            '<option value="">Alle</option>' +
+            values.map(v =>
+                `<option value="${esc(v)}">${esc(v)}</option>`
+            ).join("");
+    });
+}
+
+function getFiltered()
+{
+    const text =
+        document.getElementById("filter")
+            .value.toLowerCase();
+
+    const active = {};
+    FILTERS.forEach(k =>
+        active[k] =
+            document.getElementById("f_" + k).value);
+
+    return streams.filter(s =>
+        (s.title + " " + s.id)
+            .toLowerCase().includes(text) &&
+        FILTERS.every(k =>
+            !active[k] || s[k] === active[k])
+    );
+}
+
+function renderList()
+{
+    const list =
+        document.getElementById("streamList");
+
+    list.innerHTML =
+        getFiltered().map(stream=>`
+
+        <div class="item">
+
+            <input
+                type="checkbox"
+                ${selected.has(stream.id) ? "checked" : ""}
+                onchange="toggle('${stream.id}')">
+
+            <img src="${stream.thumb}">
+
+            <div class="info">
+
+                <strong>${esc(stream.title)}</strong>
+
+                <br>
+
+                <span class="tag ${esc(stream.status)}">${stream.status === "Live" ? "● " : ""}${esc(stream.status)}</span>
+                ${[stream.lang, stream.series, stream.session, stream.circuit]
+                    .filter(v => v && v !== "Onbekend")
+                    .map(v => `<span class="tag">${esc(v)}</span>`)
+                    .join("")}
+
+                <br>
+
+                ${esc(stream.meta)}
+
+                <br>
+
+                <a href="https://www.youtube.com/watch?v=${stream.id}"
+                   target="_blank"
+                   style="color:#87ceeb">
+                   Open op YouTube
+                </a>
+
+            </div>
+
+        </div>
+
+        `).join("");
+}
+
+function selectVisible(on)
+{
+    getFiltered().forEach(s =>
+        on ? selected.add(s.id)
+           : selected.delete(s.id));
+
+    renderList();
+    renderGrid();
+}
+
+function toggle(id)
+{
+    if(selected.has(id))
+        selected.delete(id);
+    else
+        selected.add(id);
+
+    renderGrid();
+}
+
+function renderGrid()
+{
+    const viewer =
+        document.getElementById("viewer");
+
+    const active =
+        streams.filter(x => selected.has(x.id));
+
+    if(active.length === 0)
+    {
+        viewer.className = "empty";
+        viewer.style.gridTemplateColumns = "";
+        viewer.innerHTML = "Geen streams geselecteerd";
+        return;
+    }
+
+    if(viewer.className !== "grid")
+    {
+        viewer.className = "grid";
+        viewer.innerHTML = "";
+    }
+
+    let cols = 1;
+
+    if(active.length <= 1)
+        cols = 1;
+    else if(active.length <= 4)
+        cols = 2;
+    else if(active.length <= 9)
+        cols = 3;
+    else if(active.length <= 16)
+        cols = 4;
+    else
+        cols = 5;
+
+    viewer.style.gridTemplateColumns =
+        `repeat(${cols},1fr)`;
+
+    // Bestaande tegels blijven staan (geen herlaad)
+    [...viewer.children].forEach(tile =>
+    {
+        if(!selected.has(tile.dataset.id))
+            tile.remove();
+    });
+
+    const present =
+        new Set([...viewer.children].map(t => t.dataset.id));
+
+    active.forEach(stream =>
+    {
+        if(present.has(stream.id))
+            return;
+
+        const tile = document.createElement("div");
+        tile.className = "tile";
+        tile.dataset.id = stream.id;
+        tile.innerHTML = `
+            <iframe
+                allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                allowfullscreen
+                referrerpolicy="strict-origin-when-cross-origin"
+                src="https://www.youtube.com/embed/${stream.id}?autoplay=1&mute=1&enablejsapi=1">
+            </iframe>
+            <div class="audio">
+                <button class="mutebtn" type="button"
+                    title="Geluid aan/uit"
+                    onclick="toggleMute(this)">🔇</button>
+                <input class="vol" type="range"
+                    min="0" max="100" value="100"
+                    title="Volume"
+                    oninput="setVol(this)">
+            </div>`;
+        viewer.appendChild(tile);
+    });
+}
+
+function ytCmd(tile, func, args)
+{
+    const f = tile.querySelector("iframe");
+    if(!f || !f.contentWindow)
+        return;
+
+    f.contentWindow.postMessage(JSON.stringify({
+        event: "command",
+        func,
+        args: args || []
+    }), "*");
+}
+
+function toggleMute(btn)
+{
+    const tile = btn.closest(".tile");
+    const muted = btn.textContent === "🔇";
+
+    if(muted)
+    {
+        const vol = tile.querySelector(".vol").value;
+        ytCmd(tile, "unMute");
+        ytCmd(tile, "setVolume", [Number(vol)]);
+        ytCmd(tile, "playVideo");
+        btn.textContent = "🔊";
+    }
+    else
+    {
+        ytCmd(tile, "mute");
+        btn.textContent = "🔇";
+    }
+}
+
+function setVol(range)
+{
+    const tile = range.closest(".tile");
+    const btn = tile.querySelector(".mutebtn");
+
+    if(btn.textContent === "🔇" && Number(range.value) > 0)
+    {
+        ytCmd(tile, "unMute");
+        btn.textContent = "🔊";
+    }
+
+    ytCmd(tile, "setVolume", [Number(range.value)]);
+}
+
+</script>
+
+</body>
+</html>
