@@ -181,6 +181,44 @@ input[type=text]{
 .tag.Live{ background:#cc0000; }
 .tag.Gepland{ background:#8a6d00; }
 
+.container.nosidebar .sidebar{
+    display:none;
+}
+
+.container.nosidebar .main{
+    padding:0;
+}
+
+.floatbar{
+    display:none;
+    position:fixed;
+    top:8px;
+    right:8px;
+    z-index:100;
+    gap:6px;
+    opacity:.35;
+    transition:opacity .2s;
+}
+
+.floatbar:hover{
+    opacity:1;
+}
+
+.container.nosidebar .floatbar{
+    display:flex;
+}
+
+.floatbar button{
+    width:auto;
+    margin:0;
+    padding:6px 10px;
+    background:#222;
+    color:#fff;
+    border:1px solid #555;
+    border-radius:6px;
+    font-size:16px;
+}
+
 .counter{
     color:#87ceeb;
     margin-top:10px;
@@ -192,6 +230,11 @@ input[type=text]{
 
 <div class="container">
 
+    <div class="floatbar" id="floatbar">
+        <button onclick="toggleSidebar()" title="Sidebar tonen">☰</button>
+        <button class="fsbtn" onclick="toggleFullscreen()" title="Volledige pagina">⛶</button>
+    </div>
+
     <div class="main">
         <div id="viewer" class="empty">
             Plak de broncode van GTWorld Streams
@@ -202,17 +245,24 @@ input[type=text]{
 
         <div class="header">
 
-            <h2>GTWorld Streams</h2>
+            <h2>GTWorld Streams by drakiesoft</h2>
+
+            <div class="btnrow">
+                <button onclick="toggleSidebar()">Sidebar verbergen</button>
+                <button onclick="toggleFullscreen()">Volledige pagina</button>
+            </div>
+
+            <button onclick="openSource()">
+                Bron openen in popup
+            </button>
 
             <textarea id="source"
 placeholder="CTRL+U op GTWorld Streams pagina, alles kopiëren en hier plakken"></textarea>
 
+
+
             <button onclick="loadStreams()">
                 Streams laden
-            </button>
-
-            <button onclick="openSource()">
-                Bron openen in popup
             </button>
 
             <div id="sourceHint" class="counter"></div>
@@ -543,6 +593,32 @@ function selectVisible(on)
     renderList();
     renderGrid();
 }
+
+function toggleSidebar()
+{
+    const c = document.querySelector(".container");
+    const hidden = c.classList.toggle("nosidebar");
+
+    try { localStorage.setItem("sidebarHidden", hidden ? "1" : "0"); }
+    catch(e) {}
+}
+
+function toggleFullscreen()
+{
+    if(document.fullscreenElement)
+        document.exitFullscreen();
+    else
+        document.documentElement.requestFullscreen()
+            .catch(() => alert("Volledig scherm niet toegestaan"));
+}
+
+try
+{
+    if(localStorage.getItem("sidebarHidden") === "1")
+        document.querySelector(".container")
+            .classList.add("nosidebar");
+}
+catch(e) {}
 
 function toggle(id)
 {
