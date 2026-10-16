@@ -253,7 +253,7 @@ input[type=text]{
             </div>
 
             <button onclick="openSource()">
-                Bron openen in popup
+                Bron openen in nieuw venster
             </button>
 
             <textarea id="source"
@@ -321,31 +321,30 @@ const SOURCE_URL =
 function openSource()
 {
     const hint = document.getElementById("sourceHint");
-    const features =
-        "popup=yes,width=1000,height=800,left=100,top=60";
-
+    // Geen window-features meegeven: dan opent de browser een gewoon
+    // nieuw venster/tabblad (met adresbalk) en geen popup.
     // Browsers blokkeren view-source: vanuit een webpagina.
     // Daarom eerst proberen, anders de gewone pagina openen.
     let win = null;
-    try { win = window.open("view-source:" + SOURCE_URL, "gtsource", features); }
+    try { win = window.open("view-source:" + SOURCE_URL, "gtsource"); }
     catch(e) {}
 
     const blocked = !win || win.closed;
 
     if(blocked)
     {
-        win = window.open(SOURCE_URL, "gtsource", features);
+        win = window.open(SOURCE_URL, "gtsource");
     }
 
     if(!win)
     {
         hint.innerText =
-            "Popup geblokkeerd: sta popups toe voor deze pagina.";
+            "Venster geblokkeerd: sta pop-ups/nieuwe vensters toe voor deze pagina.";
         return;
     }
 
     hint.innerText =
-        "Druk in de popup op CTRL+U, daarna CTRL+A en CTRL+C. " +
+        "Druk in het nieuwe venster op CTRL+U, daarna CTRL+A en CTRL+C. " +
         "Plak hier met CTRL+V en klik op Streams laden.";
 
     // Plakvak klaarzetten zodat alleen nog CTRL+V nodig is
