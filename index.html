@@ -171,6 +171,41 @@ input[type=text]{
     margin:2px 2px 0 0;
 }
 
+.tile{
+    position:relative;
+}
+
+.tile .audio{
+    position:absolute;
+    left:8px;
+    bottom:8px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    background:rgba(0,0,0,.65);
+    border-radius:20px;
+    padding:3px 8px;
+    z-index:5;
+}
+
+.tile .mutebtn{
+    width:auto;
+    margin:0;
+    padding:2px 6px;
+    background:transparent;
+    border:none;
+    color:#fff;
+    font-size:18px;
+    cursor:pointer;
+}
+
+.tile .vol{
+    width:80px;
+    margin:0;
+    padding:0;
+    cursor:pointer;
+}
+
 .tag.Live{ background:#cc0000; }
 .tag.Gepland{ background:#8a6d00; }
 
@@ -502,8 +537,11 @@ function renderList()
 
                 <br>
 
-                <span class="tag ${esc(stream.status)}">${esc(stream.status)}</span>
-                <span class="tag">${esc(stream.lang)}</span>
+                <span class="tag ${esc(stream.status)}">${stream.status === "Live" ? "● " : ""}${esc(stream.status)}</span>
+                ${[stream.lang, stream.series, stream.session, stream.circuit]
+                    .filter(v => v && v !== "Onbekend")
+                    .map(v => `<span class="tag">${esc(v)}</span>`)
+                    .join("")}
 
                 <br>
 
@@ -605,10 +643,66 @@ function renderGrid()
                 allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
                 allowfullscreen
                 referrerpolicy="strict-origin-when-cross-origin"
-                src="https://www.youtube.com/embed/${stream.id}?autoplay=1&mute=1">
-            </iframe>`;
+                src="https://www.youtube.com/embed/${stream.id}?autoplay=1&mute=1&enablejsapi=1">
+            </iframe>
+            <div class="audio">
+                <button class="mutebtn" type="button"
+                    title="Geluid aan/uit"
+                    onclick="toggleMute(this)">🔇</button>
+                <input class="vol" type="range"
+                    min="0" max="100" value="100"
+                    title="Volume"
+                    oninput="setVol(this)">
+            </div>`;
         viewer.appendChild(tile);
     });
+}
+
+function ytCmd(tile, func, args)
+{
+    const f = tile.querySelector("iframe");
+    if(!f || !f.contentWindow)
+        return;
+
+    f.contentWindow.postMessage(JSON.stringify({
+        event: "command",
+        func,
+        args: args || []
+    }), "*");
+}
+
+function toggleMute(btn)
+{
+    const tile = btn.closest(".tile");
+    const muted = btn.textContent === "🔇";
+
+    if(muted)
+    {
+        const vol = tile.querySelector(".vol").value;
+        ytCmd(tile, "unMute");
+        ytCmd(tile, "setVolume", [Number(vol)]);
+        ytCmd(tile, "playVideo");
+        btn.textContent = "🔊";
+    }
+    else
+    {
+        ytCmd(tile, "mute");
+        btn.textContent = "🔇";
+    }
+}
+
+function setVol(range)
+{
+    const tile = range.closest(".tile");
+    const btn = tile.querySelector(".mutebtn");
+
+    if(btn.textContent === "🔇" && Number(range.value) > 0)
+    {
+        ytCmd(tile, "unMute");
+        btn.textContent = "🔊";
+    }
+
+    ytCmd(tile, "setVolume", [Number(range.value)]);
 }
 
 </script>
