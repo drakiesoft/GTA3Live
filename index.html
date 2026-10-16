@@ -304,14 +304,21 @@ function esc(s)
     }[c]));
 }
 
-function analyse(title, badge, meta)
+function analyse(title, badge, meta, isLive)
 {
     const all = (badge + " " + meta).toLowerCase();
 
+    // Live: badgeStyle ..._LIVE (betrouwbaarst), anders "kijker(s)"
+    // Gepland: badge "Gepland" / "aan het wachten"
+    // Afgelopen: "Gestreamd: ..." met duur in de badge
     let status = "Afgelopen";
-    if(/gepland|aan het wachten|scheduled|waiting|premi/.test(all))
+    if(isLive)
+        status = "Live";
+    else if(/gepland|aan het wachten|scheduled|waiting|premi/.test(all))
         status = "Gepland";
-    else if(/\blive\b|kijkers|watching/.test(all))
+    else if(/gestreamd|streamed/.test(all))
+        status = "Afgelopen";
+    else if(/kijker|viewer|watching/.test(all))
         status = "Live";
 
     const langMatch = title.match(/\(([^()]+)\)\s*$/);
@@ -380,7 +387,8 @@ function loadStreams()
             : "";
 
         const title = tm ? fixText(tm[1]) : idm[1];
-        const badge = bm ? fixText(bm[1]) : "";
+        const isLive = /BADGE_STYLE_LIVE/.test(chunk);
+        const badge = isLive ? "LIVE" : (bm ? fixText(bm[1]) : "");
 
         map.set(idm[1], {
             id: idm[1],
@@ -389,7 +397,7 @@ function loadStreams()
             meta,
             thumb:
               `https://i.ytimg.com/vi/${idm[1]}/mqdefault.jpg`,
-            ...analyse(title, badge, meta)
+            ...analyse(title, badge, meta, isLive)
         });
     });
 
