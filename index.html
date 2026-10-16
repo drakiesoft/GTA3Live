@@ -352,6 +352,8 @@ function loadStreams()
     }
 
     html = html
+        .replace(/&quot;/g, '"')
+        .replace(/\\u0022/g, '"')
         .replace(/\\x22/g, '"')
         .replace(/\\"/g, '"');
 
@@ -387,7 +389,9 @@ function loadStreams()
             : "";
 
         const title = tm ? fixText(tm[1]) : idm[1];
-        const isLive = /BADGE_STYLE_LIVE/.test(chunk);
+        const isLive =
+            /BADGE_STYLE_LIVE|"imageName":"LIVE"|"text":"LIVE"/.test(chunk) ||
+            /kijker|watching|viewers/i.test(meta);
         const badge = isLive ? "LIVE" : (bm ? fixText(bm[1]) : "");
 
         map.set(idm[1], {
