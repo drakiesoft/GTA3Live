@@ -252,9 +252,15 @@ input[type=text]{
                 <button onclick="toggleFullscreen()">Volledige pagina</button>
             </div>
 
-            <button onclick="openSource()">
-                Bron openen in nieuw venster
-            </button>
+            <div class="btnrow">
+                <button onclick="openSource()">
+                    GTWorld Live openen in nieuw venster
+                </button>
+                <button onclick="openSource(TEST_URL)"
+                        title="Testpagina: @Bouwwebcam/streams">
+                    Test openen in nieuw venster
+                </button>
+            </div>
 
             <textarea id="source"
 placeholder="CTRL+U op GTWorld Streams pagina, alles kopiëren en hier plakken"></textarea>
@@ -318,22 +324,26 @@ function fixText(s)
 const SOURCE_URL =
     "https://www.youtube.com/@GTWorld/streams";
 
-function openSource()
+const TEST_URL =
+    "https://www.youtube.com/@Bouwwebcam/streams";
+
+function openSource(url)
 {
+    const target = url || SOURCE_URL;
     const hint = document.getElementById("sourceHint");
     // Geen window-features meegeven: dan opent de browser een gewoon
     // nieuw venster/tabblad (met adresbalk) en geen popup.
     // Browsers blokkeren view-source: vanuit een webpagina.
     // Daarom eerst proberen, anders de gewone pagina openen.
     let win = null;
-    try { win = window.open("view-source:" + SOURCE_URL, "gtsource"); }
+    try { win = window.open("view-source:" + target, "gtsource"); }
     catch(e) {}
 
     const blocked = !win || win.closed;
 
     if(blocked)
     {
-        win = window.open(SOURCE_URL, "gtsource");
+        win = window.open(target, "gtsource");
     }
 
     if(!win)
