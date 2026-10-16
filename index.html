@@ -204,6 +204,12 @@ placeholder="CTRL+U op GTWorld Streams pagina, alles kopiëren en hier plakken">
                 Streams laden
             </button>
 
+            <button onclick="openSource()">
+                Bron openen in popup
+            </button>
+
+            <div id="sourceHint" class="counter"></div>
+
             <input
                 id="filter"
                 type="text"
@@ -250,6 +256,45 @@ function fixText(s)
         try { s = decodeURIComponent(escape(s)); } catch(e) {}
     }
     return s;
+}
+
+const SOURCE_URL =
+    "https://www.youtube.com/@GTWorld/streams";
+
+function openSource()
+{
+    const hint = document.getElementById("sourceHint");
+    const features =
+        "popup=yes,width=1000,height=800,left=100,top=60";
+
+    // Browsers blokkeren view-source: vanuit een webpagina.
+    // Daarom eerst proberen, anders de gewone pagina openen.
+    let win = null;
+    try { win = window.open("view-source:" + SOURCE_URL, "gtsource", features); }
+    catch(e) {}
+
+    const blocked = !win || win.closed;
+
+    if(blocked)
+    {
+        win = window.open(SOURCE_URL, "gtsource", features);
+    }
+
+    if(!win)
+    {
+        hint.innerText =
+            "Popup geblokkeerd: sta popups toe voor deze pagina.";
+        return;
+    }
+
+    hint.innerText =
+        "Druk in de popup op CTRL+U, daarna CTRL+A en CTRL+C. " +
+        "Plak hier met CTRL+V en klik op Streams laden.";
+
+    // Plakvak klaarzetten zodat alleen nog CTRL+V nodig is
+    const src = document.getElementById("source");
+    src.value = "";
+    src.focus();
 }
 
 function esc(s)
