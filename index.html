@@ -168,6 +168,25 @@ input[type=text]{
     margin-top:10px;
 }
 
+.layoutpick label{
+    display:block;
+    margin-top:6px;
+}
+
+.slotrow{
+    margin-top:4px;
+    font-size:12px;
+    color:#bbb;
+}
+
+.slotrow select{
+    background:#222;
+    color:#fff;
+    border:1px solid #666;
+    padding:2px 4px;
+    margin-left:4px;
+}
+
 .layoutpick select{
     width:100%;
     background:#222;
@@ -439,6 +458,17 @@ input[type=text]{
             <h2>Releasenotes</h2>
             <div class="sub">GTWorld Streams by drakiesoft — wijzigingen op volgorde, nieuwste bovenaan</div>
 
+            <h3>v1.20 — Groot main-scherm en plekken</h3>
+            <ul>
+                <li>Nieuwe keuze "Indeling" in de sectie Streams: "Geen main (gelijk raster)" of "Groot main-scherm".</li>
+                <li>Bij een groot main-scherm is dat scherm 2× of 3× zo lang en breed als de andere streams, zodat 2×2 of 3×3 kleine streams er exact naast passen. De grootte kan automatisch gekozen worden op basis van de beste weergave.</li>
+                <li>De positie van het main-scherm is te kiezen: links, midden of rechts.</li>
+                <li>Bij elke aangevinkte stream staat een keuzelijst "Plek": Main, Secondary 1, Secondary 2, enzovoort (zonder main: Plek 1, 2, 3). Kies je een bezette plek, dan wisselen de twee streams van plek.</li>
+                <li>Streams wisselen van plek zonder opnieuw te laden.</li>
+                <li>De gekozen indeling, grootte, positie en de plekken worden onthouden na verversen; vink je een stream weer aan, dan krijgt hij zijn vorige plek terug.</li>
+                <li>Bij één stream vult die het hele scherm.</li>
+            </ul>
+
             <h3>v1.19 — Indeling past zich aan het scherm aan</h3>
             <ul>
                 <li>Het aantal kolommen wordt nu berekend uit de beschikbare ruimte, zodat de 16:9-beelden zo groot mogelijk zijn. Bij het veranderen van de venstergrootte, volledig scherm of het verbergen van de sidebar wordt de indeling opnieuw berekend.</li>
@@ -672,17 +702,42 @@ placeholder="Video-URL('s) plakken, één per regel (bijv. https://www.youtube.c
         <summary>Streams</summary>
         <div class="secbody">
 
-            <label class="layoutpick">Indeling
-                <select id="layoutCols" onchange="saveLayoutChoice(); relayout()">
-                    <option value="auto">Automatisch (past zich aan het scherm aan)</option>
-                    <option value="1">1 kolom</option>
-                    <option value="2">2 kolommen</option>
-                    <option value="3">3 kolommen</option>
-                    <option value="4">4 kolommen</option>
-                    <option value="5">5 kolommen</option>
-                    <option value="6">6 kolommen</option>
-                </select>
-            </label>
+            <div class="layoutpick">
+                <label>Indeling
+                    <select id="layoutMode" onchange="onArrangeChange()">
+                        <option value="equal">Geen main (gelijk raster)</option>
+                        <option value="main">Groot main-scherm</option>
+                    </select>
+                </label>
+
+                <label class="arr-equal">Kolommen
+                    <select id="layoutCols" onchange="saveLayoutChoice(); relayout()">
+                        <option value="auto">Automatisch (past zich aan het scherm aan)</option>
+                        <option value="1">1 kolom</option>
+                        <option value="2">2 kolommen</option>
+                        <option value="3">3 kolommen</option>
+                        <option value="4">4 kolommen</option>
+                        <option value="5">5 kolommen</option>
+                        <option value="6">6 kolommen</option>
+                    </select>
+                </label>
+
+                <label class="arr-main">Grootte main (lengte en breedte)
+                    <select id="mainSize" onchange="onArrangeChange()">
+                        <option value="auto">Automatisch (2× of 3×)</option>
+                        <option value="2">2× (past 2×2 kleine streams)</option>
+                        <option value="3">3× (past 3×3 kleine streams)</option>
+                    </select>
+                </label>
+
+                <label class="arr-main">Positie main
+                    <select id="mainPos" onchange="onArrangeChange()">
+                        <option value="left">Links</option>
+                        <option value="center">Midden</option>
+                        <option value="right">Rechts</option>
+                    </select>
+                </label>
+            </div>
 
             <div class="btnrow">
                 <button onclick="selectVisible(true)">Alles selecteren</button>
@@ -1562,6 +1617,8 @@ function renderList()
 
                 <strong>${esc(stream.title)}</strong>
 
+                ${slotPicker(stream.id)}
+
                 <br>
 
                 <span class="tag ${esc(stream.status)}">${stream.status === "Live" ? "● " : ""}${esc(stream.status)}</span>
@@ -1589,12 +1646,41 @@ function renderList()
         `).join("");
 }
 
+// Keuzelijst "Main / Secondary n" (of "Plek n") bij een aangevinkte stream
+function slotPicker(id)
+{
+    if(!selected.has(id))
+        return "";
+
+    const act = orderedActive().map(s => s.id);
+    const idx = act.indexOf(id);
+
+    if(idx < 0)
+        return "";
+
+    const opts = act.map((x, i) =>
+        `<option value="${i + 1}" ${i === idx ? "selected" : ""}>${
+            esc(slotLabel(i))}</option>`).join("");
+
+    return `<div class="slotrow">Plek:
+        <select onchange="setSlot('${id}', parseInt(this.value, 10))">${opts}</select>
+    </div>`;
+}
+
 function selectVisible(on)
 {
     getFiltered().forEach(s =>
-        on ? selected.add(s.id)
-           : selected.delete(s.id));
+    {
+        if(on)
+        {
+            if(!selected.has(s.id))
+                addToScreen(s.id);
+        }
+        else
+            selected.delete(s.id);
+    });
 
+    saveOrder();
     renderList();
     renderGrid();
 }
@@ -1630,9 +1716,26 @@ function toggle(id)
     if(selected.has(id))
         selected.delete(id);
     else
-        selected.add(id);
+        addToScreen(id);
 
+    saveOrder();
+
+    // Keuzelijsten (Main / Secondary n) opnieuw opbouwen
+    renderList();
     renderGrid();
+}
+
+// Een stream aanzetten. Heeft hij een bewaarde plek (van vorige keer) en
+// is die vrij, dan houdt hij die; anders komt hij achteraan in de rij.
+function addToScreen(id)
+{
+    selected.add(id);
+
+    // slotOrder is één vaste volgorde van alle streams die ooit getoond zijn;
+    // de plekken op het scherm zijn daar de aangevinkte streams uit.
+    // Zo houdt een stream zijn relatieve plek, ook na verversen.
+    if(!slotOrder.includes(id))
+        slotOrder.push(id);
 }
 
 // Kiest het aantal kolommen waarbij de 16:9-tegels zo groot mogelijk zijn
@@ -1672,6 +1775,174 @@ function bestColumns(n, w, h, gap)
     return close[0].cols;
 }
 
+// ---- Plekken: volgorde van de getoonde streams ----
+// Plek 1 = Main (bij "Groot main-scherm"), daarna Secondary 1, 2, ...
+// De volgorde wordt bewaard per video-id, ook voor niet aangevinkte streams.
+const ORDER_KEY = "gtworldMultiview.order.v1";
+let slotOrder = [];
+
+try
+{
+    const o = JSON.parse(localStorage.getItem(ORDER_KEY));
+    if(Array.isArray(o)) slotOrder = o.filter(x => typeof x === "string");
+}
+catch(e) {}
+
+function saveOrder()
+{
+    try { localStorage.setItem(ORDER_KEY, JSON.stringify(slotOrder)); }
+    catch(e) {}
+}
+
+// Geselecteerde streams in de volgorde van hun plek
+function orderedActive()
+{
+    const sel = [...selected].filter(id => streams.some(s => s.id === id));
+
+    // Streams zonder bewaarde plek komen achteraan, in volgorde van aanvinken
+    sel.forEach(id =>
+    {
+        if(!slotOrder.includes(id))
+            slotOrder.push(id);
+    });
+
+    return slotOrder
+        .filter(id => selected.has(id) && streams.some(s => s.id === id))
+        .map(id => streams.find(s => s.id === id));
+}
+
+// Zet een stream op plek n (1 = eerste). Bezette plek: de twee wisselen.
+function setSlot(id, n)
+{
+    const act = orderedActive().map(s => s.id);
+    const from = act.indexOf(id);
+
+    if(from < 0 || n < 1 || n > act.length)
+        return;
+
+    const other = act[n - 1];
+
+    // De twee streams wisselen van plaats in de vaste volgorde
+    if(other !== id)
+    {
+        const a = slotOrder.indexOf(id);
+        const b = slotOrder.indexOf(other);
+
+        slotOrder[a] = other;
+        slotOrder[b] = id;
+    }
+
+    saveOrder();
+
+    renderList();
+    renderGrid();
+}
+
+function isMainMode()
+{
+    const m = document.getElementById("layoutMode");
+    return !!m && m.value === "main";
+}
+
+function slotLabel(i)
+{
+    if(!isMainMode())
+        return "Plek " + (i + 1);
+
+    return i === 0 ? "Main" : "Secondary " + i;
+}
+
+// ---- Indeling met groot main-scherm ----
+// Alles is opgebouwd uit gelijke 16:9-cellen. Main beslaat s x s cellen
+// (s = 2 of 3), zodat 2x2 of 3x3 kleine streams er exact in passen.
+function placeMain(n, s, cols, rows, pos)
+{
+    const small = n - 1;
+    const free = cols * rows - s * s;
+
+    if(cols < s || rows < s || free < small)
+        return null;
+
+    // Kolom waar main begint
+    let c0 = 0;
+
+    if(pos === "right")
+        c0 = cols - s;
+    else if(pos === "center")
+    {
+        if((cols - s) % 2 !== 0)
+            return null;
+
+        c0 = (cols - s) / 2;
+    }
+
+    const used = new Set();
+
+    for(let r = 0; r < s; r++)
+        for(let c = c0; c < c0 + s; c++)
+            used.add(r * cols + c);
+
+    // Kleine streams vullen de vrije cellen: rij voor rij, links naar rechts
+    const cells = [];
+
+    for(let r = 0; r < rows && cells.length < small; r++)
+        for(let c = 0; c < cols && cells.length < small; c++)
+            if(!used.has(r * cols + c))
+                cells.push({ r, c });
+
+    if(cells.length < small)
+        return null;
+
+    return { cols, rows, main: { r: 0, c: c0, s }, small: cells };
+}
+
+function mainLayout(n, w, h, gap, sizeChoice, pos)
+{
+    const RATIO = 16 / 9;
+    const sizes = sizeChoice === "2" ? [2]
+                : sizeChoice === "3" ? [3]
+                : [3, 2];
+
+    let best = null;
+
+    sizes.forEach(s =>
+    {
+        for(let cols = s; cols <= s + n; cols++)
+        {
+            for(let rows = s; rows <= s + n; rows++)
+            {
+                const p = placeMain(n, s, cols, rows, pos);
+
+                if(!p)
+                    continue;
+
+                const cw = (w - gap * (cols - 1)) / cols;
+                const ch = (h - gap * (rows - 1)) / rows;
+
+                if(cw <= 0 || ch <= 0)
+                    continue;
+
+                const tw = Math.min(cw, ch * RATIO);
+                const empty = cols * rows - s * s - (n - 1);
+                const cand = { ...p, tw, s, empty };
+
+                // Grootste kleine tegels; bij gelijk: minder lege cellen,
+                // daarna de grotere main
+                const better = !best
+                    || cand.tw > best.tw + 0.5
+                    || (Math.abs(cand.tw - best.tw) <= 0.5 &&
+                        (cand.empty < best.empty ||
+                         (cand.empty === best.empty && cand.s > best.s)));
+
+                if(better)
+                    best = cand;
+            }
+        }
+    });
+
+    return best;
+}
+
 function layoutGrid(count)
 {
     const viewer = document.getElementById("viewer");
@@ -1688,7 +1959,55 @@ function layoutGrid(count)
     const h = main.clientHeight
         - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
 
-    // Automatisch, of een vast aantal kolommen (keuze in de sectie Streams)
+    const tiles = [...viewer.children];
+    const byId = new Map(tiles.map(t => [t.dataset.id, t]));
+    const order = orderedActive().map(s => s.id).filter(id => byId.has(id));
+
+    // Eerst alle tegels terugzetten; tegels blijven in de DOM staan
+    // (verplaatsen zou de iframes herladen), alleen de gridpositie wijzigt
+    tiles.forEach(t =>
+    {
+        t.style.gridColumn = "";
+        t.style.gridRow = "";
+    });
+
+    viewer.style.justifyContent = "center";
+    viewer.style.alignContent = "center";
+    viewer.style.height = Math.max(h, 0) + "px";
+
+    // Groot main-scherm (bij 1 stream vult die alles, dus gelijk raster)
+    if(isMainMode() && order.length >= 2)
+    {
+        const L = mainLayout(order.length, w, h, GAP,
+            document.getElementById("mainSize").value,
+            document.getElementById("mainPos").value);
+
+        if(L)
+        {
+            const cw = (w - GAP * (L.cols - 1)) / L.cols;
+            const ch = (h - GAP * (L.rows - 1)) / L.rows;
+            const tw = Math.max(0, Math.floor(Math.min(cw, ch * (16 / 9))));
+            const th = Math.floor(tw / (16 / 9));
+
+            viewer.style.gridTemplateColumns = `repeat(${L.cols},${tw}px)`;
+            viewer.style.gridTemplateRows = `repeat(${L.rows},${th}px)`;
+
+            const m = byId.get(order[0]);
+            m.style.gridColumn = `${L.main.c + 1} / span ${L.main.s}`;
+            m.style.gridRow = `${L.main.r + 1} / span ${L.main.s}`;
+
+            L.small.forEach((cell, i) =>
+            {
+                const t = byId.get(order[i + 1]);
+                t.style.gridColumn = `${cell.c + 1}`;
+                t.style.gridRow = `${cell.r + 1}`;
+            });
+
+            return;
+        }
+    }
+
+    // Geen main (gelijk raster): de plek bepaalt de volgorde
     const choice = document.getElementById("layoutCols");
     const fixed = choice ? parseInt(choice.value, 10) : NaN;
 
@@ -1707,10 +2026,70 @@ function layoutGrid(count)
 
     viewer.style.gridTemplateColumns = `repeat(${cols},${tw}px)`;
     viewer.style.gridTemplateRows = `repeat(${rows},${th}px)`;
-    viewer.style.justifyContent = "center";
-    viewer.style.alignContent = "center";
-    viewer.style.height = Math.max(h, 0) + "px";
+
+    order.forEach((id, i) =>
+    {
+        const t = byId.get(id);
+        t.style.gridColumn = `${(i % cols) + 1}`;
+        t.style.gridRow = `${Math.floor(i / cols) + 1}`;
+    });
 }
+
+// Keuzes voor modus, grootte en positie (onthouden na verversen)
+const ARRANGE_KEY = "gtworldMultiview.arrange.v1";
+
+function updateArrangeUi()
+{
+    const main = isMainMode();
+
+    document.querySelectorAll(".arr-main")
+        .forEach(e => e.style.display = main ? "block" : "none");
+    document.querySelectorAll(".arr-equal")
+        .forEach(e => e.style.display = main ? "none" : "block");
+}
+
+function onArrangeChange()
+{
+    try
+    {
+        localStorage.setItem(ARRANGE_KEY, JSON.stringify({
+            mode: document.getElementById("layoutMode").value,
+            size: document.getElementById("mainSize").value,
+            pos: document.getElementById("mainPos").value
+        }));
+    }
+    catch(e) {}
+
+    updateArrangeUi();
+    renderList();
+    relayout();
+}
+
+(function restoreArrange()
+{
+    try
+    {
+        const a = JSON.parse(localStorage.getItem(ARRANGE_KEY));
+
+        if(a)
+        {
+            const set = (id, v) =>
+            {
+                const sel = document.getElementById(id);
+
+                if(sel && [...sel.options].some(o => o.value === v))
+                    sel.value = v;
+            };
+
+            set("layoutMode", a.mode);
+            set("mainSize", a.size);
+            set("mainPos", a.pos);
+        }
+    }
+    catch(e) {}
+
+    updateArrangeUi();
+})();
 
 function saveLayoutChoice()
 {
@@ -1782,8 +2161,6 @@ function renderGrid()
         viewer.innerHTML = "";
     }
 
-    layoutGrid(active.length);
-
     // Bestaande tegels blijven staan (geen herlaad)
     [...viewer.children].forEach(tile =>
     {
@@ -1811,6 +2188,9 @@ function renderGrid()
             </iframe>`;
         viewer.appendChild(tile);
     });
+
+    // Plekken en indeling pas toepassen als alle tegels bestaan
+    layoutGrid(viewer.children.length);
 }
 
 // Open/dicht-stand van de secties onthouden
