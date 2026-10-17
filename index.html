@@ -238,12 +238,14 @@ input[type=text]{
     padding:0;
 }
 
-/* Iconen altijd zichtbaar, rechtsboven (met en zonder sidebar) */
+/* Iconen altijd zichtbaar, links uitgelijnd op de sidebar (400px breed).
+   Ze blijven op dezelfde plek staan als de sidebar verborgen wordt,
+   en liggen daardoor niet over de YouTube-knoppen rechts in de spelers. */
 .floatbar{
     display:flex;
     position:fixed;
     top:8px;
-    right:8px;
+    left:calc(100vw - 392px);
     z-index:100;
     gap:6px;
     opacity:1;
@@ -421,6 +423,13 @@ input[type=text]{
 
             <h2>Releasenotes</h2>
             <div class="sub">GTWorld Streams by drakiesoft — wijzigingen op volgorde, nieuwste bovenaan</div>
+
+            <h3>v1.18 — Iconen links van de sidebar</h3>
+            <ul>
+                <li>De iconen voor menu, volledige pagina en info staan nu links uitgelijnd op de sidebar en niet meer in de rechterhoek.</li>
+                <li>Ze liggen daardoor niet meer over de knoppen van de YouTube-speler (geluid, ondertiteling, instellingen).</li>
+                <li>Bij een verborgen sidebar blijven de iconen op dezelfde plek staan.</li>
+            </ul>
 
             <h3>v1.17 — Inklapbare secties in de sidebar</h3>
             <ul>
@@ -1652,7 +1661,7 @@ function renderGrid()
                 allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
                 allowfullscreen
                 referrerpolicy="strict-origin-when-cross-origin"
-                src="https://www.youtube.com/embed/${stream.id}?autoplay=1&mute=1&controls=1">
+                src="https://www.youtube.com/embed/${stream.id}?autoplay=1&mute=1&controls=1&playsinline=1">
             </iframe>`;
         viewer.appendChild(tile);
     });
