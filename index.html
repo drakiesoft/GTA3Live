@@ -29,8 +29,9 @@ body{
 
 .main{
     flex:1;
+    min-width:0;
     padding:10px;
-    overflow:auto;
+    overflow:hidden;
 }
 
 .sidebar{
@@ -104,7 +105,6 @@ input[type=text]{
     display:grid;
     gap:10px;
     height:100%;
-    grid-auto-rows:minmax(220px,1fr);
 }
 
 .tile{
@@ -112,7 +112,8 @@ input[type=text]{
     background:#000;
     border-radius:8px;
     overflow:hidden;
-    min-height:220px;
+    min-width:0;
+    min-height:0;
 }
 
 /* Speler vult de tegel exact, zodat de YouTube-knoppen
@@ -159,6 +160,20 @@ input[type=text]{
     gap:6px;
     margin-top:10px;
     font-size:12px;
+}
+
+.layoutpick{
+    display:block;
+    font-size:12px;
+    margin-top:10px;
+}
+
+.layoutpick select{
+    width:100%;
+    background:#222;
+    color:#fff;
+    border:1px solid #444;
+    padding:4px;
 }
 
 .filters .wide{
@@ -424,6 +439,14 @@ input[type=text]{
             <h2>Releasenotes</h2>
             <div class="sub">GTWorld Streams by drakiesoft — wijzigingen op volgorde, nieuwste bovenaan</div>
 
+            <h3>v1.19 — Indeling past zich aan het scherm aan</h3>
+            <ul>
+                <li>Het aantal kolommen wordt nu berekend uit de beschikbare ruimte, zodat de 16:9-beelden zo groot mogelijk zijn. Bij het veranderen van de venstergrootte, volledig scherm of het verbergen van de sidebar wordt de indeling opnieuw berekend.</li>
+                <li>Elke tegel is exact 16:9, zonder zwarte balken in de cel; de YouTube-knoppen staan direct onder het beeld.</li>
+                <li>Nieuwe keuze "Indeling" in de sectie Streams: Automatisch of een vast aantal kolommen (1 tot 6), bijvoorbeeld 4 naast elkaar. De keuze wordt onthouden.</li>
+                <li>Er is niet meer gescrold in het streamgebied; alles past in beeld.</li>
+            </ul>
+
             <h3>v1.18 — Iconen links van de sidebar</h3>
             <ul>
                 <li>De iconen voor menu, volledige pagina en info staan nu links uitgelijnd op de sidebar en niet meer in de rechterhoek.</li>
@@ -648,6 +671,18 @@ placeholder="Video-URL('s) plakken, één per regel (bijv. https://www.youtube.c
         <details class="sec" id="sec_streams" open>
         <summary>Streams</summary>
         <div class="secbody">
+
+            <label class="layoutpick">Indeling
+                <select id="layoutCols" onchange="saveLayoutChoice(); relayout()">
+                    <option value="auto">Automatisch (past zich aan het scherm aan)</option>
+                    <option value="1">1 kolom</option>
+                    <option value="2">2 kolommen</option>
+                    <option value="3">3 kolommen</option>
+                    <option value="4">4 kolommen</option>
+                    <option value="5">5 kolommen</option>
+                    <option value="6">6 kolommen</option>
+                </select>
+            </label>
 
             <div class="btnrow">
                 <button onclick="selectVisible(true)">Alles selecteren</button>
@@ -1600,6 +1635,129 @@ function toggle(id)
     renderGrid();
 }
 
+// Kiest het aantal kolommen waarbij de 16:9-tegels zo groot mogelijk zijn
+// voor de beschikbare ruimte (breedbeeld: 4 naast elkaar; smal: onder elkaar).
+function bestColumns(n, w, h, gap)
+{
+    const RATIO = 16 / 9;
+    const options = [];
+
+    for(let cols = 1; cols <= n; cols++)
+    {
+        const rows = Math.ceil(n / cols);
+        const cw = (w - gap * (cols - 1)) / cols;
+        const ch = (h - gap * (rows - 1)) / rows;
+
+        if(cw <= 0 || ch <= 0)
+            continue;
+
+        // 16:9 past in de cel: de beperkende zijde bepaalt de grootte
+        const tw = Math.min(cw, ch * RATIO);
+
+        options.push({ cols, rows, area: tw * (tw / RATIO) });
+    }
+
+    if(options.length === 0)
+        return 1;
+
+    const top = Math.max(...options.map(o => o.area));
+
+    // Indelingen die (bijna) even groot zijn als de beste: kies degene met
+    // de minste rijen. Zo komen streams op breedbeeld naast elkaar te staan.
+    // (tolerantie 0,8 op de oppervlakte = tegels circa 10% smaller)
+    const close = options.filter(o => o.area >= top * 0.8);
+
+    close.sort((a, b) => a.rows - b.rows || b.area - a.area);
+
+    return close[0].cols;
+}
+
+function layoutGrid(count)
+{
+    const viewer = document.getElementById("viewer");
+
+    if(!viewer || viewer.className !== "grid" || !count)
+        return;
+
+    const main = viewer.parentElement;
+    const cs = getComputedStyle(main);
+    const GAP = 10;
+
+    const w = main.clientWidth
+        - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const h = main.clientHeight
+        - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+
+    // Automatisch, of een vast aantal kolommen (keuze in de sectie Streams)
+    const choice = document.getElementById("layoutCols");
+    const fixed = choice ? parseInt(choice.value, 10) : NaN;
+
+    const cols = fixed > 0
+        ? Math.min(fixed, count)
+        : bestColumns(count, w, h, GAP);
+    const rows = Math.ceil(count / cols);
+
+    // Elke tegel is exact 16:9 en zo groot als de ruimte toelaat,
+    // zodat er geen zwarte balken in de cel zitten en de YouTube-knoppen
+    // direct onder het beeld staan.
+    const cw = (w - GAP * (cols - 1)) / cols;
+    const ch = (h - GAP * (rows - 1)) / rows;
+    const tw = Math.max(0, Math.floor(Math.min(cw, ch * (16 / 9))));
+    const th = Math.floor(tw / (16 / 9));
+
+    viewer.style.gridTemplateColumns = `repeat(${cols},${tw}px)`;
+    viewer.style.gridTemplateRows = `repeat(${rows},${th}px)`;
+    viewer.style.justifyContent = "center";
+    viewer.style.alignContent = "center";
+    viewer.style.height = Math.max(h, 0) + "px";
+}
+
+function saveLayoutChoice()
+{
+    try
+    {
+        localStorage.setItem("gtworldMultiview.layout.v1",
+            document.getElementById("layoutCols").value);
+    }
+    catch(e) {}
+}
+
+(function restoreLayoutChoice()
+{
+    try
+    {
+        const v = localStorage.getItem("gtworldMultiview.layout.v1");
+        const sel = document.getElementById("layoutCols");
+
+        if(v && sel && [...sel.options].some(o => o.value === v))
+            sel.value = v;
+    }
+    catch(e) {}
+})();
+
+// Indeling opnieuw berekenen bij resizen, volledig scherm en sidebar
+let layoutTimer = null;
+
+function relayout()
+{
+    clearTimeout(layoutTimer);
+
+    layoutTimer = setTimeout(() =>
+    {
+        const viewer = document.getElementById("viewer");
+
+        if(viewer && viewer.className === "grid")
+            layoutGrid(viewer.children.length);
+    }, 30);
+}
+
+window.addEventListener("resize", relayout);
+document.addEventListener("fullscreenchange", relayout);
+
+if(window.ResizeObserver)
+    new ResizeObserver(relayout)
+        .observe(document.querySelector(".main"));
+
 function renderGrid()
 {
     const viewer =
@@ -1612,6 +1770,8 @@ function renderGrid()
     {
         viewer.className = "empty";
         viewer.style.gridTemplateColumns = "";
+        viewer.style.gridTemplateRows = "";
+        viewer.style.height = "";
         viewer.innerHTML = "Geen streams geselecteerd";
         return;
     }
@@ -1622,21 +1782,7 @@ function renderGrid()
         viewer.innerHTML = "";
     }
 
-    let cols = 1;
-
-    if(active.length <= 1)
-        cols = 1;
-    else if(active.length <= 4)
-        cols = 2;
-    else if(active.length <= 9)
-        cols = 3;
-    else if(active.length <= 16)
-        cols = 4;
-    else
-        cols = 5;
-
-    viewer.style.gridTemplateColumns =
-        `repeat(${cols},1fr)`;
+    layoutGrid(active.length);
 
     // Bestaande tegels blijven staan (geen herlaad)
     [...viewer.children].forEach(tile =>
