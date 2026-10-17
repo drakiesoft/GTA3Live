@@ -238,23 +238,94 @@ input[type=text]{
     padding:0;
 }
 
+/* Iconen altijd zichtbaar, rechtsboven (met en zonder sidebar) */
 .floatbar{
-    display:none;
+    display:flex;
     position:fixed;
     top:8px;
     right:8px;
     z-index:100;
     gap:6px;
-    opacity:.35;
+    opacity:1;
     transition:opacity .2s;
 }
 
-.floatbar:hover{
+.container.nosidebar .floatbar{
+    opacity:.35;
+}
+
+.container.nosidebar .floatbar:hover{
     opacity:1;
 }
 
-.container.nosidebar .floatbar{
+/* Info / releasenotes overlay */
+.infoOverlay{
+    display:none;
+    position:fixed;
+    inset:0;
+    z-index:500;
+    background:rgba(0,0,0,.75);
+    align-items:center;
+    justify-content:center;
+}
+
+.infoOverlay.open{
     display:flex;
+}
+
+.infoBox{
+    position:relative;
+    width:min(760px,92vw);
+    max-height:86vh;
+    overflow:auto;
+    background:#1b1b1b;
+    border:1px solid #444;
+    border-radius:10px;
+    padding:22px 26px;
+    font-size:14px;
+    line-height:1.5;
+}
+
+.infoBox h2{
+    margin-bottom:4px;
+}
+
+.infoBox h3{
+    margin:18px 0 4px;
+    color:#87ceeb;
+    font-size:15px;
+}
+
+.infoBox .sub{
+    color:#999;
+    font-size:12px;
+}
+
+.infoBox ul{
+    margin:4px 0 0 20px;
+}
+
+.infoBox li{
+    margin:2px 0;
+}
+
+.infoClose{
+    position:absolute;
+    top:10px;
+    right:10px;
+    width:auto;
+    margin:0;
+    padding:4px 10px;
+    background:#222;
+    color:#fff;
+    border:1px solid #555;
+    border-radius:6px;
+    font-size:16px;
+}
+
+/* Ruimte voor de iconen boven de sidebar-titel */
+.sidebar .header{
+    padding-top:54px;
 }
 
 .floatbar button{
@@ -280,8 +351,138 @@ input[type=text]{
 <div class="container">
 
     <div class="floatbar" id="floatbar">
-        <button onclick="toggleSidebar()" title="Sidebar tonen">☰</button>
+        <button onclick="toggleSidebar()" title="Sidebar verbergen/tonen">☰</button>
         <button class="fsbtn" onclick="toggleFullscreen()" title="Volledige pagina">⛶</button>
+        <button onclick="openInfo()" title="Info en releasenotes">ⓘ</button>
+    </div>
+
+    <div class="infoOverlay" id="infoOverlay" onclick="if(event.target===this)closeInfo()">
+        <div class="infoBox">
+            <button class="infoClose" onclick="closeInfo()" title="Sluiten">✕</button>
+
+            <h2>Releasenotes</h2>
+            <div class="sub">GTWorld Streams by drakiesoft — wijzigingen op volgorde, nieuwste bovenaan</div>
+
+            <h3>v1.16 — Info en releasenotes</h3>
+            <ul>
+                <li>Info-icoon (ⓘ) naast de iconen voor sidebar en volledige pagina.</li>
+                <li>Overlay met alle releasenotes; sluiten met ✕, Esc of een klik naast het venster.</li>
+            </ul>
+
+            <h3>v1.15 — Iconen en bewaren</h3>
+            <ul>
+                <li>"Sidebar verbergen" en "Volledige pagina" zijn nu altijd twee iconen (☰ en ⛶), op dezelfde plek rechtsboven met en zonder sidebar.</li>
+                <li>De sidebar-titel en de rest staan onder de iconen.</li>
+                <li>Toegevoegde bronnen (broncodes, playlists, kanalen en losse video-URL's) blijven na verversen bewaard in de browser.</li>
+                <li>Na verversen is niets aangevinkt en speelt er niets; losse video's met onbekende status worden opnieuw gecontroleerd.</li>
+                <li>Filterdropdowns tonen meteen "Alle", ook voordat er iets is geladen.</li>
+            </ul>
+
+            <h3>v1.14 — Live-detectie losse video's verbeterd</h3>
+            <ul>
+                <li>De live-status wordt bepaald via een verborgen, gedempte YouTube-speler die de video even start, zodat reclame de detectie niet meer verstoort.</li>
+                <li>Een livestream krijgt direct het label Live; een gewone video wordt "Niet live".</li>
+                <li>Video's waarvan de eigenaar insluiten niet toestaat (YouTube-fout 100, 101 en 150) tonen de reden; status blijft "Onbekend".</li>
+                <li>De foutmelding over <code>view-source:</code> is opgelost: de bronknoppen openen direct de gewone pagina (CTRL+U toont daar de broncode).</li>
+            </ul>
+
+            <h3>v1.13 — Live-detectie voor losse video-URL's</h3>
+            <ul>
+                <li>Een toegevoegde video-URL krijgt automatisch de status Live of Niet live, bepaald via de YouTube-speler.</li>
+                <li>Titel en kanaal worden uit de speler gehaald; "Niet live" is een nieuwe optie in het statusfilter.</li>
+            </ul>
+
+            <h3>v1.12 — Losse video-URL's toevoegen</h3>
+            <ul>
+                <li>Nieuw vak "Video-URL('s)" met de knop "Video-URL toevoegen"; meerdere URL's, één per regel.</li>
+                <li>Herkent watch?v=, youtu.be, /live/, /embed/ en /shorts/; ongeldige regels worden overgeslagen met een melding.</li>
+                <li>Elke URL is een eigen bron bovenaan de lijst, wordt niet automatisch aangevinkt en is los te verwijderen.</li>
+                <li>Titel en kanaal worden via YouTube opgehaald; lukt dat niet, dan blijft "Video &lt;id&gt;" staan.</li>
+                <li>Dubbele video's: de versie met bekende status (bijv. Live) blijft zichtbaar.</li>
+            </ul>
+
+            <h3>v1.11 — Playlists</h3>
+            <ul>
+                <li>Playlistpagina's worden ondersteund via de broncode: titel, kanaal, duur en weergaven per video.</li>
+                <li>Verwijderde en privévideo's worden overgeslagen; live en gepland worden herkend.</li>
+                <li>Nieuwe knop "Playlist (URL) openen in nieuw venster" om de playlistpagina te openen en de broncode te kopiëren.</li>
+                <li>Fout in het lezen van de pagina-URL met gecodeerde tekens (zoals <code>\x3d</code>) hersteld.</li>
+            </ul>
+
+            <h3>v1.10 — Meerdere bronnen</h3>
+            <ul>
+                <li>De knop heet nu "Pagina broncode toevoegen": je kunt meerdere broncodes toevoegen; alle streams komen samen in één lijst.</li>
+                <li>Nieuw filter "Bron (kanaal)" naast Status, Taal, Serie, Sessie en Circuit; de gekozen filters blijven staan bij wijzigingen.</li>
+                <li>Overzicht "Toegevoegde bronnen" met naam, aantal streams, aantal live, klikbare URL en een ✕ om een bron en zijn streams te verwijderen.</li>
+                <li>Dezelfde bron opnieuw plakken werkt de bron bij in plaats van een dubbele toe te voegen; dubbele video's komen één keer voor.</li>
+                <li>De bronnaam staat als label bij elke stream.</li>
+            </ul>
+
+            <h3>v1.9 — Testpagina</h3>
+            <ul>
+                <li>Nieuwe knop "Test openen in nieuw venster" naast de GTWorld-knop; opent <code>youtube.com/@Bouwwebcam/streams</code>.</li>
+            </ul>
+
+            <h3>v1.8 — Bron in nieuw venster</h3>
+            <ul>
+                <li>De bron opent in een nieuw venster of tabblad en niet meer in een popup; knop "GTWorld Live openen in nieuw venster".</li>
+                <li>Uitleg onder de knop: CTRL+U, CTRL+A, CTRL+C en daarna plakken.</li>
+            </ul>
+
+            <h3>v1.7 — Sidebar verbergen en volledige pagina</h3>
+            <ul>
+                <li>De sidebar kan verborgen en weer getoond worden; de keuze wordt onthouden.</li>
+                <li>Knop voor volledige pagina (volledig scherm).</li>
+                <li>Bij een verborgen sidebar staat een zwevend paneel rechtsboven om hem terug te halen.</li>
+            </ul>
+
+            <h3>v1.6 — Knoppen van YouTube zichtbaar</h3>
+            <ul>
+                <li>De spelers vullen hun tegel exact, zodat de YouTube-knoppen (play, volume, mute) onderin niet meer worden afgeknipt.</li>
+                <li>Rijen in het raster hebben een minimale hoogte van 220px.</li>
+            </ul>
+
+            <h3>v1.5 — Geluid via YouTube zelf</h3>
+            <ul>
+                <li>De eigen geluidsoverlay is verwijderd; geluid en volume regel je met de ingebouwde knoppen van de YouTube-speler.</li>
+                <li>Streams starten gedempt, omdat browsers autoplay met geluid blokkeren.</li>
+            </ul>
+
+            <h3>v1.4 — Statuslabels in de lijst en geluid</h3>
+            <ul>
+                <li>Live-streams tonen een rood label "● Live" in de lijst.</li>
+                <li>Het label "Onbekend" wordt niet meer getoond; taal, serie, sessie en circuit alleen als ze bekend zijn.</li>
+                <li>Tijdelijk een eigen geluidsknop met volumeschuif per stream (in v1.5 vervangen door de knoppen van YouTube).</li>
+            </ul>
+
+            <h3>v1.3 — Statusfilter verbeterd</h3>
+            <ul>
+                <li>Live wordt herkend aan de live-badge van de thumbnail, de tekst "LIVE" of "kijker(s)" in de metadata.</li>
+                <li>Gepland herkend aan "Gepland" of "aan het wachten"; Afgelopen aan "Gestreamd" met de duur in de badge.</li>
+                <li>Tekens als <code>&amp;quot;</code> en <code>\u0022</code> in geplakte broncode worden goed gelezen.</li>
+            </ul>
+
+            <h3>v1.2 — Filters en gegevens per stream</h3>
+            <ul>
+                <li>Per stream worden titel, status, taal, serie, sessie, circuit en starttijd uit de broncode gelezen.</li>
+                <li>Filters op Status, Taal, Serie, Sessie en Circuit, plus zoeken op titel of video-id.</li>
+                <li>Knoppen "Alles selecteren" en "Niets selecteren" voor de zichtbare (gefilterde) streams.</li>
+                <li>De taal komt uit het laatste deel tussen haakjes in de titel; de codering van titels wordt hersteld.</li>
+            </ul>
+
+            <h3>v1.1 — Bron openen</h3>
+            <ul>
+                <li>Knop om de GTWorld-streampagina te openen en de broncode te kopiëren; het plakvak wordt klaargezet.</li>
+                <li>Een webpagina kan <code>view-source:</code> niet openen en een andere site niet uitlezen; daarom blijft kopiëren en plakken nodig.</li>
+            </ul>
+
+            <h3>v1.0 — Basis</h3>
+            <ul>
+                <li>Geen autoplay bij het laden van streams: er is niets aangevinkt.</li>
+                <li>Een stream wordt toegevoegd en speelt af zodra je hem aanvinkt; bestaande streams herladen niet bij een wijziging.</li>
+                <li>Meerdere streams tegelijk in een raster dat zich aanpast aan het aantal.</li>
+            </ul>
+        </div>
     </div>
 
     <div class="main">
@@ -295,11 +496,6 @@ input[type=text]{
         <div class="header">
 
             <h2>GTWorld Streams by drakiesoft</h2>
-
-            <div class="btnrow">
-                <button onclick="toggleSidebar()">Sidebar verbergen</button>
-                <button onclick="toggleFullscreen()">Volledige pagina</button>
-            </div>
 
             <div class="btnrow">
                 <button onclick="openSource()">
@@ -698,8 +894,8 @@ function parseSource(html)
     return { ...info, list: [...map.values()] };
 }
 
-let sources = [];
-let sourceSeq = 0;
+var sources = [];
+var sourceSeq = 0;
 
 function addSource(html)
 {
@@ -1075,6 +1271,57 @@ function rebuildStreams()
 
     renderList();
     renderGrid();
+
+    saveSources();
+}
+
+// ---- Bewaren in de browser (blijft na verversen staan) ----
+const STORE_KEY = "gtworldMultiview.sources.v1";
+
+function saveSources()
+{
+    try
+    {
+        localStorage.setItem(STORE_KEY, JSON.stringify({
+            seq: sourceSeq,
+            sources: sources.map(s => ({
+                id: s.id,
+                name: s.name,
+                url: s.url,
+                videoId: s.videoId || null,
+                streams: s.streams
+            }))
+        }));
+    }
+    catch(e) {}
+}
+
+function loadSavedSources()
+{
+    let data = null;
+
+    try { data = JSON.parse(localStorage.getItem(STORE_KEY)); }
+    catch(e) {}
+
+    if(!data || !Array.isArray(data.sources) || data.sources.length === 0)
+        return;
+
+    sources = data.sources.filter(s =>
+        s && Array.isArray(s.streams) && s.streams.length > 0);
+
+    sourceSeq = Math.max(
+        Number(data.seq) || 0,
+        ...sources.map(s => Number(s.id) || 0));
+
+    rebuildStreams();
+
+    // Losse video's waarvan de status nog onbekend is opnieuw controleren
+    sources
+        .filter(s => s.videoId && s.streams[0].status === "Onbekend")
+        .forEach(detectLive);
+
+    document.getElementById("sourceHint").innerText =
+        sources.length + " bron(nen) uit vorige sessie hersteld";
 }
 
 function renderSources()
@@ -1319,6 +1566,29 @@ function renderGrid()
         viewer.appendChild(tile);
     });
 }
+
+function openInfo()
+{
+    document.getElementById("infoOverlay").classList.add("open");
+    document.querySelector(".infoBox").scrollTop = 0;
+}
+
+function closeInfo()
+{
+    document.getElementById("infoOverlay").classList.remove("open");
+}
+
+document.addEventListener("keydown", e =>
+{
+    if(e.key === "Escape")
+        closeInfo();
+});
+
+// Dropdowns meteen vullen ("Alle"), ook als er nog niets geladen is
+fillFilters();
+
+// Opgeslagen bronnen terugzetten (staat bewust helemaal onderaan)
+loadSavedSources();
 
 </script>
 
