@@ -157,6 +157,51 @@ input[type=text]{
     font-size:12px;
 }
 
+.filters .wide{
+    grid-column:1 / -1;
+}
+
+.sourcelist{
+    margin-top:10px;
+    font-size:12px;
+}
+
+.srctitle{
+    color:#aaa;
+    margin-bottom:4px;
+}
+
+.srcitem{
+    display:flex;
+    align-items:flex-start;
+    gap:8px;
+    background:#222;
+    border:1px solid #333;
+    border-radius:6px;
+    padding:6px 8px;
+    margin-bottom:6px;
+}
+
+.srcinfo{
+    flex:1;
+    word-break:break-all;
+}
+
+.srcmeta{
+    color:#aaa;
+    margin-left:6px;
+}
+
+.srcdel{
+    width:auto;
+    margin:0;
+    padding:2px 8px;
+    background:#5a1a1a;
+    color:#fff;
+    border:1px solid #844;
+    border-radius:4px;
+}
+
 .filters select{
     width:100%;
     background:#222;
@@ -262,16 +307,22 @@ input[type=text]{
                 </button>
             </div>
 
+            <button onclick="openPlaylist()">
+                Playlist (URL) openen in nieuw venster
+            </button>
+
             <textarea id="source"
 placeholder="CTRL+U op GTWorld Streams pagina, alles kopiëren en hier plakken"></textarea>
 
 
 
             <button onclick="loadStreams()">
-                Streams laden
+                Pagina broncode toevoegen
             </button>
 
             <div id="sourceHint" class="counter"></div>
+
+            <div id="sourceList" class="sourcelist"></div>
 
             <input
                 id="filter"
@@ -280,6 +331,8 @@ placeholder="CTRL+U op GTWorld Streams pagina, alles kopiëren en hier plakken">
                 oninput="renderList()">
 
             <div class="filters">
+                <label class="wide">Bron (kanaal)
+                    <select id="f_source" onchange="renderList()"></select></label>
                 <label>Status
                     <select id="f_status" onchange="renderList()"></select></label>
                 <label>Taal
@@ -327,6 +380,28 @@ const SOURCE_URL =
 const TEST_URL =
     "https://www.youtube.com/@Bouwwebcam/streams";
 
+// Playlist-URL invullen en de pagina openen om de broncode te kopiëren
+function openPlaylist()
+{
+    const input = prompt(
+        "Plak de playlist-URL\n" +
+        "(bijv. https://www.youtube.com/playlist?list=PL...)");
+
+    if(!input)
+        return;
+
+    const m = input.match(/[?&]list=([A-Za-z0-9_-]+)/);
+
+    if(!m)
+    {
+        alert("Geen geldige playlist-URL (list=... ontbreekt)");
+        return;
+    }
+
+    openSource(
+        "https://www.youtube.com/playlist?list=" + m[1]);
+}
+
 function openSource(url)
 {
     const target = url || SOURCE_URL;
@@ -355,11 +430,10 @@ function openSource(url)
 
     hint.innerText =
         "Druk in het nieuwe venster op CTRL+U, daarna CTRL+A en CTRL+C. " +
-        "Plak hier met CTRL+V en klik op Streams laden.";
+        "Plak hier met CTRL+V en klik op Pagina broncode toevoegen.";
 
     // Plakvak klaarzetten zodat alleen nog CTRL+V nodig is
     const src = document.getElementById("source");
-    src.value = "";
     src.focus();
 }
 
@@ -408,8 +482,8 @@ function analyse(title, badge, meta, isLive)
 
 function loadStreams()
 {
-    let html =
-        document.getElementById("source").value;
+    const box = document.getElementById("source");
+    const html = box.value;
 
     if(!html.trim())
     {
@@ -417,17 +491,144 @@ function loadStreams()
         return;
     }
 
+    if(addSource(html))
+        box.value = "";
+}
+
+// Leest naam + URL van het kanaal uit de broncode
+function sourceInfo(html)
+{
+    let url = "";
+    let name = "";
+
+    const u = html.match(/window\['ytUrl'\]\s*=\s*'([^']+)'/);
+    if(u)
+        url = "https://www.youtube.com" +
+              u[1].replace(/\\x([0-9a-f]{2})/gi,
+                  (m, h) => String.fromCharCode(parseInt(h, 16)))
+                  .replace(/\\\//g, "/");
+
+    const m = html.match(
+        /"microformatDataRenderer":\{"urlCanonical":"([^"]+)","title":"((?:[^"\\]|\\.)*)"/);
+
+    if(m)
+    {
+        name = fixText(m[2]);
+        if(!url)
+            url = m[1];
+    }
+
+    if(!name)
+    {
+        const a = html.match(/"alternateName":"(@[^"]+)"/);
+        if(a)
+            name = a[1];
+    }
+
+    return { name, url };
+}
+
+const STR = '((?:[^"\\\\]|\\\\.)*)';
+
+function firstText(chunk, re)
+{
+    const m = chunk.match(re);
+    return m ? fixText(m[1]) : "";
+}
+
+function parsePlaylistItems(html, map)
+{
+    const chunks =
+        html.split('"playlistVideoRenderer":{').slice(1);
+
+    chunks.forEach(chunk =>
+    {
+        const idm = chunk.match(/^"videoId":"([^"]+)"/) ||
+                    chunk.match(/"videoId":"([^"]+)"/);
+
+        if(!idm || map.has(idm[1]))
+            return;
+
+        const title =
+            firstText(chunk,
+                new RegExp('"title":\\{"runs":\\[\\{"text":"' + STR + '"')) ||
+            firstText(chunk,
+                new RegExp('"title":\\{"simpleText":"' + STR + '"')) ||
+            idm[1];
+
+        // Verwijderde of privévideo's overslaan
+        if(/^\[?(deleted video|private video|verwijderde video|privévideo)\]?$/i
+            .test(title.trim()))
+            return;
+
+        const channel =
+            firstText(chunk,
+                new RegExp('"shortBylineText":\\{"runs":\\[\\{"text":"' + STR + '"'));
+
+        const length =
+            firstText(chunk,
+                new RegExp('"lengthText":\\{.{0,400}?"simpleText":"' + STR + '"'));
+
+        const infoRuns = chunk.match(/"videoInfo":\{"runs":\[(.*?)\]\}/);
+        const info = infoRuns
+            ? [...infoRuns[1].matchAll(
+                new RegExp('"text":"' + STR + '"', 'g'))]
+                .map(x => fixText(x[1]))
+                .filter(x => x.trim() && x.trim() !== "•")
+                .join(" • ")
+            : "";
+
+        const isLive =
+            /"style":"LIVE"|BADGE_STYLE_TYPE_LIVE_NOW|BADGE_STYLE_LIVE/
+                .test(chunk) ||
+            /kijker|watching/i.test(info);
+
+        const upcoming =
+            /"style":"UPCOMING"|"upcomingEventData"/.test(chunk);
+
+        const badge = isLive ? "LIVE" : (upcoming ? "Gepland" : length);
+
+        const meta = [channel, info]
+            .filter(Boolean).join(" • ");
+
+        const a = analyse(title, badge, meta, isLive);
+
+        if(upcoming && !isLive)
+            a.status = "Gepland";
+        else if(!isLive)
+            a.status = "Afgelopen";
+
+        map.set(idm[1], {
+            id: idm[1],
+            title,
+            badge,
+            meta,
+            thumb:
+              `https://i.ytimg.com/vi/${idm[1]}/mqdefault.jpg`,
+            ...a
+        });
+    });
+}
+
+function parseSource(html)
+{
+    const info = sourceInfo(html);
+
     html = html
         .replace(/&quot;/g, '"')
         .replace(/\\u0022/g, '"')
         .replace(/\\x22/g, '"')
         .replace(/\\"/g, '"');
 
-    const chunks =
-        html.split('"lockupViewModel":{"contentImage"')
-            .slice(1);
-
     const map = new Map();
+
+    // Playlistpagina's: elke video is een "playlistVideoRenderer"
+    parsePlaylistItems(html, map);
+
+    const chunks = map.size > 0
+        ? []
+        : html.split('"lockupViewModel":{"contentImage"')
+              .slice(1);
 
     chunks.forEach(chunk =>
     {
@@ -492,29 +693,140 @@ function loadStreams()
             }));
     }
 
+    return { ...info, list: [...map.values()] };
+}
+
+let sources = [];
+let sourceSeq = 0;
+
+function addSource(html)
+{
+    const p = parseSource(html);
+
+    if(p.list.length === 0)
+    {
+        alert("Geen streams gevonden in deze broncode");
+        return false;
+    }
+
+    // Zelfde kanaal opnieuw plakken = die bron bijwerken
+    let src = p.url
+        ? sources.find(s => s.url === p.url)
+        : null;
+
+    if(src)
+    {
+        src.name = p.name || src.name;
+        src.streams = p.list;
+    }
+    else
+    {
+        sourceSeq++;
+        src = {
+            id: sourceSeq,
+            name: p.name || ("Bron " + sourceSeq),
+            url: p.url,
+            streams: p.list
+        };
+        sources.push(src);
+    }
+
+    rebuildStreams();
+
+    document.getElementById("sourceHint").innerText =
+        "Toegevoegd: " + src.name + " (" + p.list.length + " streams)";
+
+    return true;
+}
+
+function removeSource(id)
+{
+    sources = sources.filter(s => s.id !== id);
+    rebuildStreams();
+}
+
+// Voegt alle bronnen samen tot één lijst (geen dubbele video's)
+function rebuildStreams()
+{
+    const map = new Map();
+
+    sources.forEach(src =>
+        src.streams.forEach(s =>
+        {
+            if(!map.has(s.id))
+                map.set(s.id, {
+                    ...s,
+                    sourceId: src.id,
+                    source: src.name
+                });
+        }));
+
     streams = [...map.values()];
 
-    // Geen autoplay bij laden: niets geselecteerd
-    selected = new Set();
+    // Geselecteerde streams van verwijderde bronnen weghalen.
+    // Niets wordt automatisch geselecteerd of afgespeeld.
+    selected = new Set(
+        [...selected].filter(id => map.has(id)));
 
     fillFilters();
+    renderSources();
 
     document.getElementById("counter").innerText =
-        streams.length +
-        " unieke video's gevonden (vink aan om af te spelen)";
+        streams.length + " unieke video's uit " +
+        sources.length + " bron(nen) (vink aan om af te spelen)";
 
     renderList();
     renderGrid();
 }
 
+function renderSources()
+{
+    const box = document.getElementById("sourceList");
 
-const FILTERS = ["status","lang","series","session","circuit"];
+    if(sources.length === 0)
+    {
+        box.innerHTML = "";
+        return;
+    }
+
+    box.innerHTML =
+        '<div class="srctitle">Toegevoegde bronnen</div>' +
+        sources.map(src =>
+        {
+            const live =
+                src.streams.filter(s => s.status === "Live").length;
+
+            return `
+            <div class="srcitem">
+                <div class="srcinfo">
+                    <strong>${esc(src.name)}</strong>
+                    <span class="srcmeta">
+                        ${src.streams.length} streams,
+                        ${live} live
+                    </span>
+                    <br>
+                    ${src.url
+                        ? `<a href="${esc(src.url)}" target="_blank"
+                              style="color:#87ceeb">${esc(src.url)}</a>`
+                        : "<em>URL onbekend</em>"}
+                </div>
+                <button class="srcdel" type="button"
+                    title="Bron en bijbehorende streams verwijderen"
+                    onclick="removeSource(${src.id})">✕</button>
+            </div>`;
+        }).join("");
+}
+
+
+const FILTERS =
+    ["source","status","lang","series","session","circuit"];
 
 function fillFilters()
 {
     FILTERS.forEach(key =>
     {
         const sel = document.getElementById("f_" + key);
+        const old = sel.value;
         const values =
             [...new Set(streams.map(s => s[key]))].sort();
 
@@ -523,6 +835,10 @@ function fillFilters()
             values.map(v =>
                 `<option value="${esc(v)}">${esc(v)}</option>`
             ).join("");
+
+        // Gekozen filter behouden als die nog bestaat
+        if(values.includes(old))
+            sel.value = old;
     });
 }
 
@@ -569,7 +885,7 @@ function renderList()
                 <br>
 
                 <span class="tag ${esc(stream.status)}">${stream.status === "Live" ? "● " : ""}${esc(stream.status)}</span>
-                ${[stream.lang, stream.series, stream.session, stream.circuit]
+                ${[stream.source, stream.lang, stream.series, stream.session, stream.circuit]
                     .filter(v => v && v !== "Onbekend")
                     .map(v => `<span class="tag">${esc(v)}</span>`)
                     .join("")}
