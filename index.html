@@ -46,6 +46,10 @@ body{
     border-bottom:1px solid #333;
 }
 
+textarea.smallbox{
+    height:60px;
+}
+
 textarea{
     width:100%;
     height:120px;
@@ -312,12 +316,19 @@ input[type=text]{
             </button>
 
             <textarea id="source"
-placeholder="CTRL+U op GTWorld Streams pagina, alles kopiëren en hier plakken"></textarea>
+placeholder="Ga naar een youtube kanaal Live of Playlist Tab CTRL+U om paginabron te openen, alles kopiëren en hier plakken"></textarea>
 
 
 
             <button onclick="loadStreams()">
                 Pagina broncode toevoegen
+            </button>
+
+            <textarea id="videoUrls" class="smallbox"
+placeholder="Video-URL('s) plakken, één per regel (bijv. https://www.youtube.com/watch?v=...)"></textarea>
+
+            <button onclick="addVideoUrls()">
+                Video-URL toevoegen
             </button>
 
             <div id="sourceHint" class="counter"></div>
@@ -331,7 +342,7 @@ placeholder="CTRL+U op GTWorld Streams pagina, alles kopiëren en hier plakken">
                 oninput="renderList()">
 
             <div class="filters">
-                <label class="wide">Bron (kanaal)
+                <label class="wide">Bron (kanaal/playlist/video)
                     <select id="f_source" onchange="renderList()"></select></label>
                 <label>Status
                     <select id="f_status" onchange="renderList()"></select></label>
@@ -408,18 +419,9 @@ function openSource(url)
     const hint = document.getElementById("sourceHint");
     // Geen window-features meegeven: dan opent de browser een gewoon
     // nieuw venster/tabblad (met adresbalk) en geen popup.
-    // Browsers blokkeren view-source: vanuit een webpagina.
-    // Daarom eerst proberen, anders de gewone pagina openen.
-    let win = null;
-    try { win = window.open("view-source:" + target, "gtsource"); }
-    catch(e) {}
-
-    const blocked = !win || win.closed;
-
-    if(blocked)
-    {
-        win = window.open(target, "gtsource");
-    }
+    // (view-source: kan een webpagina niet openen, dus de gewone
+    // pagina wordt geopend; CTRL+U toont daar de broncode.)
+    const win = window.open(target, "gtsource");
 
     if(!win)
     {
@@ -739,6 +741,298 @@ function addSource(html)
     return true;
 }
 
+// Haalt het video-id uit watch?v=, youtu.be, /live/, /embed/, /shorts/
+function videoIdFromUrl(text)
+{
+    const t = text.trim();
+
+    let m = t.match(/[?&]v=([A-Za-z0-9_-]{11})/);
+    if(!m) m = t.match(/youtu\.be\/([A-Za-z0-9_-]{11})/);
+    if(!m) m = t.match(
+        /youtube(?:-nocookie)?\.com\/(?:live|embed|shorts|v)\/([A-Za-z0-9_-]{11})/);
+
+    return m ? m[1] : null;
+}
+
+// Elke video-URL wordt een eigen bron (zodat hij los te verwijderen is)
+// en komt bovenaan de lijst. Niets wordt automatisch aangevinkt.
+function addVideoUrls()
+{
+    const box = document.getElementById("videoUrls");
+    const hint = document.getElementById("sourceHint");
+
+    const lines = box.value
+        .split(/\s*[\r\n]+\s*/)
+        .map(x => x.trim())
+        .filter(Boolean);
+
+    if(lines.length === 0)
+    {
+        alert("Geen video-URL ingevuld");
+        return;
+    }
+
+    const added = [];
+    const skipped = [];
+
+    lines.forEach(line =>
+    {
+        const id = videoIdFromUrl(line);
+
+        if(!id)
+        {
+            skipped.push(line);
+            return;
+        }
+
+        if(sources.some(s => s.videoId === id))
+            return;
+
+        sourceSeq++;
+
+        const src = {
+            id: sourceSeq,
+            videoId: id,
+            name: "Video " + id,
+            url: "https://www.youtube.com/watch?v=" + id,
+            streams: [{
+                id,
+                title: "Video " + id,
+                badge: "",
+                meta: "Losse video-URL",
+                thumb: `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
+                status: "Onbekend",
+                lang: "Onbekend",
+                session: "Onbekend",
+                circuit: "Onbekend",
+                series: "Onbekend"
+            }]
+        };
+
+        added.push(src);
+    });
+
+    if(added.length > 0)
+    {
+        // Bovenaan de lijst, in de volgorde van plakken
+        sources.unshift(...added);
+        box.value = "";
+        rebuildStreams();
+        added.forEach(fetchVideoTitle);
+        added.forEach(detectLive);
+    }
+
+    hint.innerText =
+        added.length + " video-URL(s) toegevoegd" +
+        (skipped.length
+            ? ", " + skipped.length + " ongeldig overgeslagen"
+            : "");
+}
+
+// Probeert de echte titel op te halen; lukt dat niet, dan blijft het id staan
+function fetchVideoTitle(src)
+{
+    fetch("https://www.youtube.com/oembed?format=json&url=" +
+          encodeURIComponent(src.url))
+        .then(r => r.ok ? r.json() : Promise.reject())
+        .then(d =>
+        {
+            if(!d || !d.title || !sources.includes(src))
+                return;
+
+            const old = src.streams[0];
+            const a = analyse(d.title, "", "", false);
+
+            src.name = d.title;
+            src.streams[0] = {
+                ...old,
+                title: d.title,
+                meta: (d.author_name || "Losse video-URL"),
+                ...a,
+                status: old.status,
+                badge: old.badge
+            };
+
+            rebuildStreams();
+        })
+        .catch(() => {});
+}
+
+// ---- Live-status van een losse video via de YouTube-speler ----
+let ytApiPromise = null;
+
+function loadYtApi()
+{
+    if(ytApiPromise)
+        return ytApiPromise;
+
+    ytApiPromise = new Promise((resolve, reject) =>
+    {
+        if(window.YT && YT.Player)
+        {
+            resolve();
+            return;
+        }
+
+        const prev = window.onYouTubeIframeAPIReady;
+
+        window.onYouTubeIframeAPIReady = () =>
+        {
+            if(prev) prev();
+            resolve();
+        };
+
+        const s = document.createElement("script");
+        s.src = "https://www.youtube.com/iframe_api";
+        s.onerror = () => reject();
+        document.head.appendChild(s);
+
+        setTimeout(reject, 15000);
+    });
+
+    ytApiPromise.catch(() => { ytApiPromise = null; });
+
+    return ytApiPromise;
+}
+
+// Laadt de video (gedempt, niet afspelend) in een verborgen speler
+// en leest uit of het een livestream is.
+function detectLive(src)
+{
+    loadYtApi().then(() =>
+    {
+        const holder = document.createElement("div");
+        holder.style.cssText =
+            "position:fixed;left:-9999px;top:0;width:320px;height:180px;";
+        const inner = document.createElement("div");
+        holder.appendChild(inner);
+        document.body.appendChild(holder);
+
+        let player = null;
+        let timer = null;
+        let tries = 0;
+        let stable = 0;
+        let done = false;
+
+        const stop = () =>
+        {
+            done = true;
+            clearInterval(timer);
+            try { player.destroy(); } catch(e) {}
+            holder.remove();
+        };
+
+        // isLive is pas betrouwbaar als de video echt speelt
+        // (eerst kan reclame komen). Daarom gedempt laten spelen
+        // en wachten; bij een livestream stopt de controle meteen.
+        const check = () =>
+        {
+            if(done)
+                return;
+
+            tries++;
+
+            let data = null, state = -9, dur = 0;
+            try
+            {
+                data = player.getVideoData();
+                state = player.getPlayerState();
+                dur = player.getDuration();
+            }
+            catch(e) {}
+
+            if(data && data.isLive && data.video_id === src.videoId)
+            {
+                stop();
+                applyLive(src, true, data);
+                return;
+            }
+
+            // Speelt de echte video al een paar seconden en is hij
+            // niet live, dan is het een gewone video.
+            if(data && data.video_id === src.videoId &&
+               state === 1 && dur > 0)
+                stable++;
+            else
+                stable = 0;
+
+            if(stable >= 4)
+            {
+                stop();
+                applyLive(src, false, data);
+                return;
+            }
+
+            // Blijft het onduidelijk (bijv. lange reclame), dan
+            // blijft de status "Onbekend"
+            if(tries >= 90)
+                stop();
+        };
+
+        player = new YT.Player(inner, {
+            videoId: src.videoId,
+            width: 320,
+            height: 180,
+            playerVars: { autoplay: 0, mute: 1, controls: 0, playsinline: 1 },
+            events: {
+                onReady: () =>
+                {
+                    try { player.mute(); player.playVideo(); } catch(e) {}
+                    timer = setInterval(check, 500);
+                },
+                onError: e =>
+                {
+                    stop();
+                    markUnavailable(src, e.data);
+                }
+            }
+        });
+    }).catch(() => {});
+}
+
+// Foutcodes van de YouTube-speler (101/150 = insluiten niet toegestaan)
+function markUnavailable(src, code)
+{
+    if(!sources.includes(src))
+        return;
+
+    const reason =
+        (code === 101 || code === 150)
+            ? "Insluiten niet toegestaan door de eigenaar"
+        : (code === 100)
+            ? "Video niet gevonden of privé"
+            : "Video kan niet worden afgespeeld (fout " + code + ")";
+
+    const old = src.streams[0];
+
+    src.streams[0] = {
+        ...old,
+        meta: reason
+    };
+
+    rebuildStreams();
+
+    document.getElementById("sourceHint").innerText =
+        reason + ": " + src.url;
+}
+
+function applyLive(src, isLive, data)
+{
+    if(!sources.includes(src))
+        return;
+
+    const old = src.streams[0];
+
+    src.streams[0] = {
+        ...old,
+        status: isLive ? "Live" : "Niet live",
+        badge: isLive ? "LIVE" : old.badge,
+        meta: (data.author || old.meta)
+    };
+
+    rebuildStreams();
+}
+
 function removeSource(id)
 {
     sources = sources.filter(s => s.id !== id);
@@ -753,7 +1047,11 @@ function rebuildStreams()
     sources.forEach(src =>
         src.streams.forEach(s =>
         {
-            if(!map.has(s.id))
+            const cur = map.get(s.id);
+
+            // Dubbele video: de versie met bekende status wint,
+            // de plek in de lijst blijft behouden
+            if(!cur || (cur.status === "Onbekend" && s.status !== "Onbekend"))
                 map.set(s.id, {
                     ...s,
                     sourceId: src.id,
