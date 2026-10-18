@@ -434,6 +434,45 @@ input[type=text]{
     font-size:16px;
 }
 
+.apikey{
+    margin-bottom:12px;
+    padding-bottom:10px;
+    border-bottom:1px solid #333;
+    font-size:12px;
+}
+
+.apikey input{
+    width:100%;
+    margin-top:4px;
+    padding:8px;
+    background:#222;
+    color:#fff;
+    border:1px solid #444;
+}
+
+.apihelp{
+    margin-top:4px;
+    color:#888;
+}
+
+.apistate{
+    margin-top:6px;
+    color:#aaa;
+    word-break:break-word;
+}
+
+.apistate.ok{ color:#6fcf97; }
+.apistate.err{ color:#ff8a8a; }
+
+.srcrefresh{
+    width:auto;
+    margin:0 6px 0 0;
+    padding:2px 8px;
+    background:#1d3b52;
+    color:#fff;
+    border:1px solid #3b6c91;
+    border-radius:4px;
+}
 .counter{
     color:#87ceeb;
     margin-top:10px;
@@ -458,6 +497,14 @@ input[type=text]{
             <h2>Releasenotes</h2>
             <div class="sub">GTWorld Streams by drakiesoft — wijzigingen op volgorde, nieuwste bovenaan</div>
 
+            <h3>v1.21 — YouTube API (optioneel)</h3>
+            <ul>
+                <li>Invoerveld voor een YouTube API key bovenin de sectie "YouTube sources toevoegen". De key wordt alleen in deze browser bewaard en staat niet in de pagina. "Opslaan en testen" controleert de key en meldt wat er misgaat (ongeldig, API niet ingeschakeld, quotum op, verwijzerbeperking).</li>
+                <li>Met een key komt de live-status van losse video-URL's uit de API (live, gepland, afgelopen of niet live), met titel, kanaal, aantal kijkers en geplande starttijd. Zonder key blijft de methode via de speler werken.</li>
+                <li>Kanaal-URL's (@naam of /channel/...) en playlist-URL's kunnen direct worden toegevoegd, zonder broncode te plakken. Bij een kanaal worden de streams uit de laatste 100 uploads getoond.</li>
+                <li>Verversknop (↻) per bron met een API-koppeling. Bij het opslaan van een key en bij het openen van de pagina worden alle bronnen met een API-koppeling automatisch ververst.</li>
+                <li>Teller met het aantal gebruikte API-eenheden in deze sessie. Alle API-aanroepen lopen via een plek (API_BASE), zodat later een proxy gebruikt kan worden.</li>
+            </ul>
             <h3>v1.20 — Groot main-scherm en plekken</h3>
             <ul>
                 <li>Nieuwe keuze "Indeling" in de sectie Streams: "Geen main (gelijk raster)" of "Groot main-scherm".</li>
@@ -633,6 +680,18 @@ input[type=text]{
         <summary>YouTube sources toevoegen</summary>
         <div class="secbody">
 
+            <div class="apikey">
+                <label>YouTube API key (optioneel)
+                    <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="AIza...">
+                </label>
+                <div class="apihelp">Nodig voor kanaal-/playlist-URL's en een betrouwbare live-status. De key wordt alleen in deze browser bewaard.</div>
+                <div class="btnrow">
+                    <button type="button" onclick="saveApiKey()">Opslaan en testen</button>
+                    <button type="button" onclick="clearApiKey()">Wissen</button>
+                </div>
+                <div id="apiKeyState" class="apistate"></div>
+            </div>
+
             <div class="btnrow">
                 <button onclick="openSource()">
                     GTWorld Live openen in nieuw venster
@@ -657,10 +716,10 @@ placeholder="Ga naar een youtube kanaal Live of Playlist Tab CTRL+U om paginabro
             </button>
 
             <textarea id="videoUrls" class="smallbox"
-placeholder="Video-URL('s) plakken, één per regel (bijv. https://www.youtube.com/watch?v=...)"></textarea>
+placeholder="URL('s) plakken, één per regel: video, kanaal (@naam) of playlist. Kanaal en playlist vragen een API key."></textarea>
 
             <button onclick="addVideoUrls()">
-                Video-URL toevoegen
+                URL toevoegen
             </button>
 
             <div id="sourceHint" class="counter"></div>
@@ -1127,6 +1186,157 @@ function addSource(html)
     return true;
 }
 
+// ============ YouTube Data API (optioneel, met eigen key) ============
+// Alle aanroepen lopen via API_BASE. Later kan dit naar een eigen proxy
+// wijzen (waarbij de key niet meer in de browser staat).
+const API_BASE = "https://www.googleapis.com/youtube/v3";
+const API_KEY_STORE = "gtworldMultiview.apikey.v1";
+
+let apiKey = "";
+let apiUnits = 0;
+let apiBroken = "";
+
+try { apiKey = localStorage.getItem(API_KEY_STORE) || ""; }
+catch(e) {}
+
+function apiActive()
+{
+    return !!apiKey && !apiBroken;
+}
+
+function setApiState(text, kind)
+{
+    const el = document.getElementById("apiKeyState");
+
+    if(!el)
+        return;
+
+    el.className = "apistate" + (kind ? " " + kind : "");
+    el.innerText = text;
+}
+
+function apiStateIdle()
+{
+    if(!apiKey)
+        setApiState("Geen key: live-status via de speler; kanaal- en playlist-URL's zijn niet beschikbaar.", "");
+    else if(apiBroken)
+        setApiState(apiBroken, "err");
+    else
+        setApiState("API actief (" + apiUnits + " eenheden gebruikt in deze sessie)", "ok");
+}
+
+// Vertaalt een foutantwoord van Google naar een duidelijke melding
+function apiErrorText(status, body)
+{
+    const e = (body && body.error) || {};
+    const reason = (e.errors && e.errors[0] && e.errors[0].reason) ||
+                   (e.details && e.details[0] && e.details[0].reason) || "";
+    const msg = e.message || ("HTTP " + status);
+
+    if(/API_KEY_INVALID|keyInvalid/.test(reason) || /not valid/i.test(msg))
+        return "Key ongeldig. Controleer of je de hele key hebt geplakt.";
+    if(/quota/i.test(reason) || /quota/i.test(msg))
+        return "Dagquotum op. Probeer het morgen opnieuw of gebruik een andere key.";
+    if(/accessNotConfigured|SERVICE_DISABLED/.test(reason) || /has not been used|is disabled/i.test(msg))
+        return "YouTube Data API v3 is niet ingeschakeld voor dit project.";
+    if(/ipRefererBlocked|API_KEY_HTTP_REFERRER_BLOCKED/.test(reason) || /referer/i.test(msg))
+        return "Deze key is beperkt tot andere websites. Voeg dit adres toe aan de toegestane verwijzers of gebruik een onbeperkte testkey.";
+    if(/forbidden/i.test(reason))
+        return "Geen toegang: " + msg;
+
+    return msg;
+}
+
+// Eén aanroep naar de API. kosten = quota-eenheden voor de teller.
+async function apiGet(path, params, cost)
+{
+    if(!apiKey)
+        throw new Error("Geen API key");
+
+    const q = new URLSearchParams({ ...params, key: apiKey });
+    let res;
+
+    try { res = await fetch(API_BASE + path + "?" + q.toString()); }
+    catch(e) { throw new Error("Geen verbinding met de YouTube API"); }
+
+    let body = null;
+    try { body = await res.json(); } catch(e) {}
+
+    if(!res.ok)
+    {
+        const text = apiErrorText(res.status, body);
+
+        // Key- of quotumfouten gelden voor alles: pagina valt dan terug
+        if(res.status === 400 || res.status === 403)
+        {
+            apiBroken = text;
+            apiStateIdle();
+        }
+
+        throw new Error(text);
+    }
+
+    apiUnits += cost || 1;
+    apiStateIdle();
+
+    return body;
+}
+
+function saveApiKey()
+{
+    const input = document.getElementById("apiKeyInput");
+    const key = input.value.trim();
+
+    if(!key)
+    {
+        setApiState("Vul eerst een key in.", "err");
+        return;
+    }
+
+    apiKey = key;
+    apiBroken = "";
+    setApiState("Key testen...", "");
+
+    // Kleine testaanroep: 1 eenheid
+    apiGet("/videos", { part: "id", id: "dQw4w9WgXcQ" }, 1)
+        .then(() =>
+        {
+            try { localStorage.setItem(API_KEY_STORE, key); } catch(e) {}
+            input.value = "";
+            input.placeholder = "Key opgeslagen (" + key.slice(0, 4) + "..." + key.slice(-3) + ")";
+            apiStateIdle();
+            refreshAllSources();
+        })
+        .catch(err =>
+        {
+            apiKey = "";
+            setApiState(err.message, "err");
+        });
+}
+
+function clearApiKey()
+{
+    apiKey = "";
+    apiBroken = "";
+    apiUnits = 0;
+
+    try { localStorage.removeItem(API_KEY_STORE); } catch(e) {}
+
+    const input = document.getElementById("apiKeyInput");
+    input.value = "";
+    input.placeholder = "AIza...";
+    apiStateIdle();
+}
+
+(function initApiUi()
+{
+    const input = document.getElementById("apiKeyInput");
+
+    if(input && apiKey)
+        input.placeholder = "Key opgeslagen (" + apiKey.slice(0, 4) + "..." + apiKey.slice(-3) + ")";
+
+    apiStateIdle();
+})();
 // Haalt het video-id uit watch?v=, youtu.be, /live/, /embed/, /shorts/
 function videoIdFromUrl(text)
 {
@@ -1140,9 +1350,342 @@ function videoIdFromUrl(text)
     return m ? m[1] : null;
 }
 
-// Elke video-URL wordt een eigen bron (zodat hij los te verwijderen is)
-// en komt bovenaan de lijst. Niets wordt automatisch aangevinkt.
-function addVideoUrls()
+// ---- Gegevens van de API omzetten naar een stream ----
+function fmtLocal(iso)
+{
+    try
+    {
+        return new Date(iso).toLocaleString("nl-NL", {
+            day: "2-digit", month: "2-digit", year: "numeric",
+            hour: "2-digit", minute: "2-digit"
+        });
+    }
+    catch(e) { return iso; }
+}
+
+function streamFromApi(v)
+{
+    const sn = v.snippet || {};
+    const ls = v.liveStreamingDetails || null;
+    const st = v.status || {};
+    const id = v.id;
+    const title = sn.title || id;
+    const kind = sn.liveBroadcastContent;   // live | upcoming | none
+
+    let status = "Afgelopen";
+    let badge = "";
+    const parts = [];
+
+    if(sn.channelTitle)
+        parts.push(sn.channelTitle);
+
+    if(kind === "live")
+    {
+        status = "Live";
+        badge = "LIVE";
+
+        if(ls && ls.concurrentViewers)
+            parts.push(Number(ls.concurrentViewers).toLocaleString("nl-NL") + " kijker(s)");
+    }
+    else if(kind === "upcoming")
+    {
+        status = "Gepland";
+        badge = "Gepland";
+
+        if(ls && ls.scheduledStartTime)
+            parts.push("Gepland voor " + fmtLocal(ls.scheduledStartTime));
+    }
+    else if(ls && ls.actualEndTime)
+    {
+        parts.push("Gestreamd: " + fmtLocal(ls.actualEndTime));
+    }
+
+    if(st.embeddable === false)
+        parts.push("Insluiten niet toegestaan");
+
+    const meta = parts.join(" \u2022 ");
+
+    return {
+        id,
+        title,
+        badge,
+        meta,
+        thumb: `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
+        embeddable: st.embeddable !== false,
+        ...analyse(title, badge, meta, kind === "live"),
+        status
+    };
+}
+
+// Haalt details van video's op (max 50 per aanroep, 1 eenheid)
+async function apiVideos(ids)
+{
+    const out = new Map();
+
+    for(let i = 0; i < ids.length; i += 50)
+    {
+        const chunk = ids.slice(i, i + 50);
+        const d = await apiGet("/videos", {
+            part: "snippet,liveStreamingDetails,status",
+            id: chunk.join(","),
+            maxResults: 50
+        }, 1);
+
+        (d.items || []).forEach(v => out.set(v.id, streamFromApi(v)));
+    }
+
+    return out;
+}
+
+// ---- URL's herkennen ----
+// Geeft { type: "video"|"playlist"|"channel", ... } of null
+function parseYtUrl(text)
+{
+    const t = text.trim();
+
+    const vid = videoIdFromUrl(t);
+
+    if(vid && !/[?&]list=/.test(t) || (vid && /watch\?/.test(t)))
+        return { type: "video", id: vid };
+
+    const pl = t.match(/[?&]list=([A-Za-z0-9_-]{10,})/);
+
+    if(pl)
+        return { type: "playlist", id: pl[1] };
+
+    const ch = t.match(/youtube\.com\/channel\/(UC[A-Za-z0-9_-]{20,})/);
+
+    if(ch)
+        return { type: "channel", channelId: ch[1] };
+
+    const h = t.match(/youtube\.com\/(@[A-Za-z0-9._%-]+)/);
+
+    if(h)
+        return { type: "channel", handle: decodeURIComponent(h[1]) };
+
+    return null;
+}
+
+// Kanaal -> uploads-lijst (1 eenheid)
+async function apiResolveChannel(p)
+{
+    const params = { part: "snippet,contentDetails" };
+
+    if(p.channelId)
+        params.id = p.channelId;
+    else
+        params.forHandle = p.handle;
+
+    const d = await apiGet("/channels", params, 1);
+    const c = (d.items || [])[0];
+
+    if(!c)
+        throw new Error("Kanaal niet gevonden: " + (p.handle || p.channelId));
+
+    return {
+        channelId: c.id,
+        name: (c.snippet && c.snippet.title) || p.handle || c.id,
+        uploads: c.contentDetails.relatedPlaylists.uploads
+    };
+}
+
+// Video-id's van een afspeellijst (1 eenheid per 50)
+async function apiPlaylistIds(playlistId, max)
+{
+    const ids = [];
+    let token = "";
+
+    while(ids.length < max)
+    {
+        const params = {
+            part: "contentDetails",
+            playlistId,
+            maxResults: 50
+        };
+
+        if(token)
+            params.pageToken = token;
+
+        const d = await apiGet("/playlistItems", params, 1);
+
+        (d.items || []).forEach(it =>
+        {
+            const id = it.contentDetails && it.contentDetails.videoId;
+
+            if(id && !ids.includes(id))
+                ids.push(id);
+        });
+
+        token = d.nextPageToken || "";
+
+        if(!token)
+            break;
+    }
+
+    return ids.slice(0, max);
+}
+
+async function apiPlaylistTitle(playlistId)
+{
+    try
+    {
+        const d = await apiGet("/playlists", { part: "snippet", id: playlistId }, 1);
+        const p = (d.items || [])[0];
+        return p ? p.snippet.title : playlistId;
+    }
+    catch(e) { return playlistId; }
+}
+
+const API_MAX_ITEMS = 100;
+// ---- Bronnen via de API toevoegen en verversen ----
+// Een API-bron onthoudt waar hij vandaan komt (api: {type, ...}), zodat
+// hij later met een druk op de knop ververst kan worden.
+function findApiSource(api)
+{
+    return sources.find(s => s.api && s.api.type === api.type &&
+        (api.type === "video" ? s.api.id === api.id
+         : api.type === "playlist" ? s.api.id === api.id
+         : s.api.channelId === api.channelId));
+}
+
+async function fillApiSource(src)
+{
+    const a = src.api;
+    let ids = [];
+
+    if(a.type === "video")
+        ids = [a.id];
+    else
+        ids = await apiPlaylistIds(a.playlistId, API_MAX_ITEMS);
+
+    const map = await apiVideos(ids);
+    const list = ids.map(i => map.get(i)).filter(Boolean);
+
+    src.streams = list;
+    src.refreshed = Date.now();
+
+    if(a.type === "video" && list[0])
+        src.name = list[0].title;
+}
+
+async function addApiSource(p)
+{
+    let api = null;
+    let name = "";
+    let url = "";
+
+    if(p.type === "video")
+    {
+        api = { type: "video", id: p.id };
+        url = "https://www.youtube.com/watch?v=" + p.id;
+        name = "Video " + p.id;
+    }
+    else if(p.type === "playlist")
+    {
+        api = { type: "playlist", id: p.id, playlistId: p.id };
+        url = "https://www.youtube.com/playlist?list=" + p.id;
+        name = await apiPlaylistTitle(p.id);
+    }
+    else
+    {
+        const c = await apiResolveChannel(p);
+        api = { type: "channel", channelId: c.channelId, playlistId: c.uploads };
+        url = "https://www.youtube.com/channel/" + c.channelId;
+        name = c.name;
+    }
+
+    let src = findApiSource(api);
+    const isNew = !src;
+
+    if(isNew)
+    {
+        sourceSeq++;
+        src = { id: sourceSeq, name, url, streams: [], api };
+
+        if(api.type === "video")
+            src.videoId = api.id;
+    }
+    else
+        src.name = name;
+
+    await fillApiSource(src);
+
+    if(src.streams.length === 0)
+        throw new Error("Geen video's gevonden voor " + name);
+
+    if(isNew)
+        sources.unshift(src);
+
+    return src;
+}
+
+async function refreshApiSource(src)
+{
+    if(!src.api || !apiActive())
+        return false;
+
+    const before = JSON.stringify(src.streams.map(s => [s.id, s.status]));
+
+    try
+    {
+        await fillApiSource(src);
+    }
+    catch(e)
+    {
+        document.getElementById("sourceHint").innerText =
+            "Verversen mislukt (" + src.name + "): " + e.message;
+        return false;
+    }
+
+    return before !== JSON.stringify(src.streams.map(s => [s.id, s.status]));
+}
+
+async function refreshSource(id)
+{
+    const src = sources.find(s => s.id === id);
+
+    if(!src)
+        return;
+
+    const hint = document.getElementById("sourceHint");
+
+    if(!src.api)
+    {
+        hint.innerText = "Deze bron komt uit geplakte broncode; plak de broncode opnieuw om te verversen.";
+        return;
+    }
+
+    if(!apiActive())
+    {
+        hint.innerText = "Voor verversen is een werkende API key nodig.";
+        return;
+    }
+
+    hint.innerText = "Verversen: " + src.name + "...";
+    await refreshApiSource(src);
+    rebuildStreams();
+    hint.innerText = "Ververst: " + src.name;
+}
+
+async function refreshAllSources()
+{
+    if(!apiActive())
+        return;
+
+    const list = sources.filter(s => s.api);
+
+    if(list.length === 0)
+        return;
+
+    for(const s of list)
+        await refreshApiSource(s);
+
+    rebuildStreams();
+}
+// Elke regel wordt een eigen bron (los te verwijderen) bovenaan de lijst.
+// Met API key: video-, kanaal- en playlist-URL's via de API.
+// Zonder key: alleen video-URL's (live-status via de speler).
+async function addVideoUrls()
 {
     const box = document.getElementById("videoUrls");
     const hint = document.getElementById("sourceHint");
@@ -1154,67 +1697,96 @@ function addVideoUrls()
 
     if(lines.length === 0)
     {
-        alert("Geen video-URL ingevuld");
+        alert("Geen URL ingevuld");
         return;
     }
 
     const added = [];
-    const skipped = [];
+    const problems = [];
+    const viaApi = apiActive();
 
-    lines.forEach(line =>
+    for(const line of lines)
     {
-        const id = videoIdFromUrl(line);
+        const p = parseYtUrl(line);
 
-        if(!id)
+        if(!p)
         {
-            skipped.push(line);
-            return;
+            problems.push("Niet herkend: " + line);
+            continue;
         }
 
-        if(sources.some(s => s.videoId === id))
-            return;
+        // Zonder key kunnen alleen losse video's worden toegevoegd
+        if(!viaApi && p.type !== "video")
+        {
+            problems.push("Voor kanaal- en playlist-URL's is een API key nodig: " + line);
+            continue;
+        }
 
-        sourceSeq++;
+        if(p.type === "video" && sources.some(s => s.videoId === p.id))
+            continue;
 
-        const src = {
-            id: sourceSeq,
-            videoId: id,
-            name: "Video " + id,
-            url: "https://www.youtube.com/watch?v=" + id,
-            streams: [{
-                id,
-                title: "Video " + id,
-                badge: "",
-                meta: "Losse video-URL",
-                thumb: `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
-                status: "Onbekend",
-                lang: "Onbekend",
-                session: "Onbekend",
-                circuit: "Onbekend",
-                series: "Onbekend"
-            }]
-        };
+        if(viaApi)
+        {
+            try
+            {
+                hint.innerText = "Ophalen via de API...";
+                added.push(await addApiSource(p));
+            }
+            catch(e)
+            {
+                problems.push(e.message + " (" + line + ")");
 
-        added.push(src);
-    });
+                // Bij een key- of quotumfout: rest van de regels zonder API
+                if(!apiActive() && p.type === "video")
+                    added.push(...addPlainVideo(p.id));
+            }
+        }
+        else
+            added.push(...addPlainVideo(p.id));
+    }
 
     if(added.length > 0)
     {
-        // Bovenaan de lijst, in de volgorde van plakken
-        sources.unshift(...added);
         box.value = "";
         rebuildStreams();
-        added.forEach(fetchVideoTitle);
-        added.forEach(detectLive);
+
+        // Zonder API: titel en live-status via oEmbed en de speler
+        added.filter(s => !s.api).forEach(fetchVideoTitle);
+        added.filter(s => !s.api).forEach(detectLive);
     }
 
     hint.innerText =
-        added.length + " video-URL(s) toegevoegd" +
-        (skipped.length
-            ? ", " + skipped.length + " ongeldig overgeslagen"
-            : "");
+        added.length + " bron(nen) toegevoegd" +
+        (problems.length ? ". " + problems.join(" | ") : "");
 }
 
+// Losse video zonder API: bron met alleen het id; rest volgt later
+function addPlainVideo(id)
+{
+    sourceSeq++;
+
+    const src = {
+        id: sourceSeq,
+        videoId: id,
+        name: "Video " + id,
+        url: "https://www.youtube.com/watch?v=" + id,
+        streams: [{
+            id,
+            title: "Video " + id,
+            badge: "",
+            meta: "Losse video-URL",
+            thumb: `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
+            status: "Onbekend",
+            lang: "Onbekend",
+            session: "Onbekend",
+            circuit: "Onbekend",
+            series: "Onbekend"
+        }]
+    };
+
+    sources.unshift(src);
+    return [src];
+}
 // Probeert de echte titel op te halen; lukt dat niet, dan blijft het id staan
 function fetchVideoTitle(src)
 {
@@ -1479,6 +2051,8 @@ function saveSources()
                 name: s.name,
                 url: s.url,
                 videoId: s.videoId || null,
+                api: s.api || null,
+                refreshed: s.refreshed || null,
                 streams: s.streams
             }))
         }));
@@ -1507,11 +2081,14 @@ function loadSavedSources()
 
     // Losse video's waarvan de status nog onbekend is opnieuw controleren
     sources
-        .filter(s => s.videoId && s.streams[0].status === "Onbekend")
+        .filter(s => s.videoId && !s.api && s.streams[0].status === "Onbekend")
         .forEach(detectLive);
 
     document.getElementById("sourceHint").innerText =
         sources.length + " bron(nen) uit vorige sessie hersteld";
+
+    // Bronnen met een API-koppeling krijgen meteen de actuele status
+    refreshAllSources();
 }
 
 function renderSources()
@@ -1545,9 +2122,14 @@ function renderSources()
                               style="color:#87ceeb">${esc(src.url)}</a>`
                         : "<em>URL onbekend</em>"}
                 </div>
+                <div class="srcbtns">
+                ${src.api ? `<button class="srcrefresh" type="button"
+                    title="Status verversen via de API"
+                    onclick="refreshSource(${src.id})">↻</button>` : ""}
                 <button class="srcdel" type="button"
                     title="Bron en bijbehorende streams verwijderen"
                     onclick="removeSource(${src.id})">✕</button>
+                </div>
             </div>`;
         }).join("");
 }
